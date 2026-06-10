@@ -1,17 +1,20 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    const bakeTypes = b.step("bake", "generates ecsTypes.zig which holds all of the ecs types");
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
+    const bakeTypes = b.step("bake", "generates ecsTypes.zig which holds all of the ecs types");
     _, const generatedPath = generateSystemsFile(b, "ecsTypes.zig", "systems");
     const updated = b.addUpdateSourceFiles();
     updated.addCopyFileToSource(generatedPath, "./src/ecsTypes.zig");
     bakeTypes.dependOn(&updated.step);
 
     const mainModule = b.addModule("main", .{
-        .optimize = .Debug,
-        .target = b.graph.host,
+        .optimize = optimize,
+        .target = target,
         .root_source_file = b.path("./src/main.zig"),
+        .link_libc = true,
     });
     const exe = b.addExecutable(.{
         .name = "fishtFighting",
@@ -23,6 +26,19 @@ pub fn build(b: *std.Build) void {
     const run = b.step("run", "runs the executable");
     const runExe = b.addRunArtifact(exe);
     run.dependOn(&runExe.step);
+
+    const raylib_dep = b.dependency("raylib", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const raylib = raylib_dep.module("raylib"); // main raylib module
+    const raygui = raylib_dep.module("raygui"); // raygui module
+    const raylib_artifact = raylib_dep.artifact("raylib"); // raylib C library
+
+    exe.root_module.linkLibrary(raylib_artifact);
+    exe.root_module.addImport("raylib", raylib);
+    exe.root_module.addImport("raygui", raygui);
 }
 
 /// walks through a directory tree, compiles files names into a list (full path local to root)
@@ -61,7 +77,7 @@ pub fn generateSystemsFile(b: *std.Build, name: []const u8, dir: []const u8) @Tu
         std.mem.concat(
             b.allocator,
             u8,
-            &.{"src/", dir},
+            &.{ "src/", dir },
         ) catch |err| @panic(@errorName(err)),
         b.allocator,
     ) catch |err| @panic(@errorName(err));
