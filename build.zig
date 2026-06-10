@@ -1,9 +1,12 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
-    _, const generatedPath = generateSystemsFile(b, "src/systems/ecsTypes.zig", "src/systems");
+    const bakeTypes = b.step("bake", "generates ecsTypes.zig which holds all of the ecs types");
+
+    _, const generatedPath = generateSystemsFile(b, "ecsTypes.zig", "systems");
     const updated = b.addUpdateSourceFiles();
-    updated.addCopyFileToSource(generatedPath, "./src/systems/example.zig");
+    updated.addCopyFileToSource(generatedPath, "./src/ecsTypes.zig");
+    bakeTypes.dependOn(&updated.step);
 
     const mainModule = b.addModule("main", .{
         .optimize = .Debug,
@@ -51,21 +54,30 @@ pub fn compileFilesInDirectory(
     return files.toOwnedSlice(gpa);
 }
 
+/// generates the file with the systems, places it in `src`
 pub fn generateSystemsFile(b: *std.Build, name: []const u8, dir: []const u8) @Tuple(&.{ *std.Build.Step.WriteFile, std.Build.LazyPath }) {
-    const files = compileFilesInDirectory(b.graph.io, dir, b.allocator) catch |err| @panic(@errorName(err));
+    const files = compileFilesInDirectory(
+        b.graph.io,
+        std.mem.concat(
+            b.allocator,
+            u8,
+            &.{"src/", dir},
+        ) catch |err| @panic(@errorName(err)),
+        b.allocator,
+    ) catch |err| @panic(@errorName(err));
     const write = b.addWriteFiles();
 
     var contents = std.Io.Writer.Allocating.init(b.allocator);
     contents.writer.print(
-        \\pub const systems: []const []const u8 = &.{{
+        \\pub const systems = [_]type{{
         \\
     , .{}) catch |err| @panic(@errorName(err));
 
     for (files) |file| {
         contents.writer.print(
-            \\@import("{s}"),
+            \\    @import("{s}/{s}"),
             \\
-        , .{file}) catch |err| @panic(@errorName(err));
+        , .{ dir, file }) catch |err| @panic(@errorName(err));
     }
 
     contents.writer.print(

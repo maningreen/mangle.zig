@@ -3,31 +3,54 @@
 
 const std = @import("std");
 const meta = std.meta;
+const util = @import("util.zig");
+const StructField = std.builtin.Type.StructField;
 
-pub const types = @import("ecsTypes");
-pub const TypesEnum = meta.DeclEnum(types);
+comptime item: u32 = 30,
+
+pub const systems = blk: {
+    const arr = @import("ecsTypes.zig").systems;
+    var names: [arr.len][]const u8 = undefined;
+    var fieldTypes: [arr.len]type = undefined;
+    var fieldAttrs: [arr.len]StructField.Attributes = undefined;
+    for (arr, 0..) |v, i| {
+        const basename = util.getBaseName(v);
+        names[i] = basename;
+        fieldTypes[i] = type;
+        fieldAttrs[i] = StructField.Attributes{
+            .default_value_ptr = &v,
+            .@"align" = null,
+            .@"comptime" = true,
+        };
+    }
+    break :blk @Struct(
+        .auto,
+        null,
+        &names,
+        &fieldTypes,
+        &fieldAttrs,
+    );
+};
+pub const SystemsEnum = meta.FieldEnum(systems);
 
 pub const SystemArrayType = std.ArrayList;
 
 pub fn GenerateDataType(comptime dataTypes: []const type) type {
     comptime {
-        var names: [][]const u8 = undefined;
+        var names: [dataTypes.len][]const u8 = undefined;
+        var arrayTypes: [dataTypes.len]type = undefined;
+        var atters: [dataTypes.len]std.builtin.Type.StructField.Attributes = undefined;
         for (dataTypes, 0..) |T, i| {
-            assertIsSystem(T);
-            names[i] = @typeName(T);
+            names[i] = util.getBaseName(T);
+            arrayTypes[i] = SystemArrayType(getSystemChildType(T));
+            atters[i] = std.builtin.Type.StructField.Attributes{ .default_value_ptr = &arrayTypes[i].empty };
         }
 
-        @Struct(
-            .auto,
-            null,
-            names,
-            dataTypes.types,
-            .{ .default_value_ptr = &.{} } ** dataTypes.len,
-        );
+        return @Struct(.auto, null, &names, &arrayTypes, &atters);
     }
 }
 
-pub fn assertIsSystem(comptime T: type) void {
+pub inline fn assertIsSystem(comptime T: type) void {
     comptime {
         const info = @typeInfo(T);
         if (info != .@"struct")
@@ -77,8 +100,7 @@ pub const SystemOptions = struct {
 
     pub fn SystemHasOptions(comptime T: type) bool {
         comptime {
-            assertIsSystem(T);
-            return @hasDecl(T, "systemOptions");
+            return @hasDecl(T, declName);
         }
     }
 };
@@ -88,25 +110,26 @@ pub const SystemOptions = struct {
 /// otherwise returns default
 pub fn getSystemOpts(comptime T: type) SystemOptions {
     comptime {
-        assertIsSystem(T);
-        return if (SystemOptions.SystemHasOptions(T)) @field(T, SystemOptions.declName) else .{};
+        return if (@hasDecl(T, SystemOptions.declName))
+            @field(T, SystemOptions.declName)
+        else
+            .{};
     }
 }
 
 pub fn getSystemChildType(comptime T: type) type {
     comptime {
-        assertIsSystem(T);
         return @field(T, getSystemOpts(T).childTypeName);
     }
 }
 
-pub fn getSystemType(comptime t: TypesEnum) type {
+pub fn getSystemType(comptime tag: SystemsEnum) type {
     comptime {
-        return @field(types, @tagName(t));
+        return @field(systems{}, @tagName(tag));
     }
 }
 
-pub fn getSystemSliceType(comptime t: TypesEnum) type {
+pub fn getSystemSliceType(comptime t: SystemsEnum) type {
     comptime {
         const System = getSystemType(t);
         const opts = getSystemOpts(System);
