@@ -1,4 +1,10 @@
 const std = @import("std");
+const engine = @import("engine.zig");
+
+comptime {
+    std.testing.refAllDecls(@import("./engine.zig"));
+    std.testing.refAllDecls(@import("./runtime.zig"));
+}
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
