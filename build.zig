@@ -1,5 +1,33 @@
 const std = @import("std");
 
+const Library = union(enum) {
+    dependency: struct {
+        name: []const u8,
+        /// if not provided, defaults to `name` only
+        modules: ?[]const ModuleInfo = null,
+        /// if not provided, does not link
+        artifact: ?[]const u8 = null,
+    },
+    systemLibrary: []const u8,
+
+    const ModuleInfo = struct {
+        name: []const u8,
+        importAs: ?[]const u8 = null,
+    };
+};
+
+const dependencies: []const Library = &.{
+    .{ .systemLibrary = "X11" },
+    .{ .systemLibrary = "Xcursor" },
+    .{ .systemLibrary = "Xi" },
+    .{ .systemLibrary = "Xinerama" },
+    .{ .systemLibrary = "Xrandr" },
+    .{ .systemLibrary = "glfw" },
+    .{ .dependency = .{
+        .name = "raylib",
+    } },
+};
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -14,12 +42,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .target = target,
         .root_source_file = b.path("./src/main.zig"),
-        .link_libc = true,
     });
-    const exe = b.addExecutable(.{
-        .name = "fishtFighting",
-        .root_module = mainModule,
-    });
+    const exe = b.addExecutable(.{ .name = "fishtFighting", .root_module = mainModule, .linkage = .dynamic });
     const install = b.addInstallArtifact(exe, .{});
     _ = install;
 
@@ -27,18 +51,24 @@ pub fn build(b: *std.Build) void {
     const runExe = b.addRunArtifact(exe);
     run.dependOn(&runExe.step);
 
-    const raylib_dep = b.dependency("raylib", .{
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const raylib = raylib_dep.module("raylib"); // main raylib module
-    const raygui = raylib_dep.module("raygui"); // raygui module
-    const raylib_artifact = raylib_dep.artifact("raylib"); // raylib C library
-
-    exe.root_module.linkLibrary(raylib_artifact);
-    exe.root_module.addImport("raylib", raylib);
-    exe.root_module.addImport("raygui", raygui);
+    for (dependencies) |lib| {
+        switch (lib) {
+            .dependency => |depInfo| {
+                const dep = b.dependency(depInfo.name, .{
+                    .optimize = optimize,
+                    .target = target,
+                });
+                for (depInfo.modules orelse &.{Library.ModuleInfo{ .name = depInfo.name }}) |module|
+                    exe.root_module.addImport(module.importAs orelse module.name, dep.module(module.name));
+                if (depInfo.artifact) |artifact| {
+                    exe.root_module.linkLibrary(dep.artifact(artifact));
+                }
+            },
+            .systemLibrary => |sys| {
+                exe.root_module.linkSystemLibrary(sys, .{ .use_pkg_config = .no });
+            },
+        }
+    }
 }
 
 /// walks through a directory tree, compiles files names into a list (full path local to root)
