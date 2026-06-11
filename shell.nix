@@ -4,14 +4,15 @@
 pkgs.mkShell {
   packages = with pkgs; [
     zig
+    clang
     libGL
     glfw
 
-    libx11
-    libx11.dev
-    libxcursor
-    libxi
-    libxinerama
-    libxrandr
+    libX11
+    libX11.dev
+    libXcursor
+    libXi
+    libXinerama
+    libXrandr
   ];
 }
