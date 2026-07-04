@@ -1,20 +1,24 @@
 const std = @import("std");
 const engine = @import("engine.zig");
 const meta = std.meta;
-const Runtime = @This();
+const System = engine.System;
 
-const SystemsEnum = engine.SystemsEnum;
-const Types = engine.Types;
+pub fn GenerateRuntime(comptime DataTypes: []const type, comptime systems: []const System) type {
+    _ = systems;
+    return struct {
+        const Runtime = @This();
+        const SystemsEnum = engine.SystemsEnum;
+        const ProcessError = engine.ProcessError;
 
-const ProcessError = engine.ProcessError;
+        /// Data container with all the types
+        data: DataType = .{},
+        pub const DataType = engine.GenerateDataType(DataTypes);
 
-/// Data container with all the types
-data: DataType = .{},
-pub const DataType = engine.GenerateDataType(&@import("./ecsTypes.zig").systems);
-
-pub fn process(self: *Runtime) ProcessError!void {
-    inline for (comptime std.enums.values(SystemsEnum)) |tag| {
-        std.log.info("running process for {}", .{tag});
-        try engine.getSystemType(tag).process(@field(self.data, @tagName(tag)), 0);
-    }
+        pub fn process(self: *Runtime) ProcessError!void {
+            inline for (comptime std.enums.values(SystemsEnum)) |tag| {
+                std.log.info("running process for {}", .{tag});
+                try engine.getSystemType(tag).process(@field(self.data, @tagName(tag)), 0);
+            }
+        }
+    };
 }

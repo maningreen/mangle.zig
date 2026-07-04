@@ -5,136 +5,151 @@ const std = @import("std");
 const meta = std.meta;
 const util = @import("util.zig");
 const StructField = std.builtin.Type.StructField;
+const StructAttrs = std.builtin.Type.StructField.Attributes;
 
-comptime item: u32 = 30,
-
-pub const systems = blk: {
-    const arr = @import("ecsTypes.zig").systems;
-    var names: [arr.len][]const u8 = undefined;
-    var fieldTypes: [arr.len]type = undefined;
-    var fieldAttrs: [arr.len]StructField.Attributes = undefined;
-    for (arr, 0..) |v, i| {
-        const basename = util.getBaseName(v);
-        names[i] = basename;
-        fieldTypes[i] = type;
-        fieldAttrs[i] = StructField.Attributes{
-            .default_value_ptr = &v,
-            .@"align" = null,
-            .@"comptime" = true,
-        };
-    }
-    break :blk @Struct(
-        .auto,
-        null,
-        &names,
-        &fieldTypes,
-        &fieldAttrs,
-    );
+pub const System = struct {
+    Types: Signature,
+    /// it's ensured `anytype` will be a tuple of slices ordered by `Types`
+    process: fn (anytype, RegistryInformation) ProcessError!void,
 };
-pub const SystemsEnum = meta.FieldEnum(systems);
 
-pub const SystemArrayType = std.ArrayList;
+pub const RegistryInformation = struct {
+    gpa: std.mem.Allocator,
+    io: std.Io,
+};
 
-pub fn GenerateDataType(comptime dataTypes: []const type) type {
-    comptime {
-        var names: [dataTypes.len][]const u8 = undefined;
-        var arrayTypes: [dataTypes.len]type = undefined;
-        var atters: [dataTypes.len]std.builtin.Type.StructField.Attributes = undefined;
-        for (dataTypes, 0..) |T, i| {
-            names[i] = util.getBaseName(T);
-            arrayTypes[i] = SystemArrayType(getSystemChildType(T));
-            atters[i] = std.builtin.Type.StructField.Attributes{ .default_value_ptr = &arrayTypes[i].empty };
+/// Returns a struct, with an array of the necessary data for the type
+pub fn Archetype(sig: Signature) type {
+    return struct {
+        const Self = @This();
+
+        pub const Signature = sig;
+        pub const DataType = sig.GetType();
+
+        /// an array list of all the data,
+        /// - data is optional, if it's missing at the top level
+        ///   then it's assumed it's uninitialized.
+        /// - data is differentiated by the type, and nothing else
+        ///   if the data has multiple items of the same type,
+        ///   it's recommended making type aliases instead
+        /// example of recommendation
+        /// ```
+        /// DataType = .{ i32, i32 }
+        /// ```
+        /// Do
+        /// ```
+        /// DataType = .{ Health, Damage }
+        /// ```
+        data: std.ArrayList(?DataType),
+
+        pub inline fn qualifies(_: Self, item: anytype) bool {
+            return comptime sig.qualifies(item);
         }
 
-        return @Struct(.auto, null, &names, &arrayTypes, &atters);
-    }
+        /// returns a pointer to the newly allocated *unset* data
+        /// Tuple form.
+        pub fn allocItem(self: *Self, gpa: std.mem.Allocator) !*DataType {
+            return self.data.addOne(gpa);
+        }
+
+        /// appends an item to the list
+        pub fn appendItem(self: *Self, gpa: std.mem.Allocator, item: DataType) !void {
+            try self.data.append(gpa, item);
+        }
+
+        /// no deallocation.
+        pub fn swapPop(self: *Self, index: usize) void {
+            self.data.swapRemove(index);
+        }
+
+        pub fn deinit(self: *Self, gpa: std.mem.Allocator) void {
+            self.data.deinit(gpa);
+        }
+    };
 }
 
-pub inline fn assertIsSystem(comptime T: type) void {
-    comptime {
-        const info = @typeInfo(T);
-        if (info != .@"struct")
-            @compileError("Error, type `" ++ @typeName(T) ++ "` is not a structure!");
+pub const Signature = struct {
+    items: []const type,
 
-        const opts = getSystemOpts(T);
-
-        const procInfo =
-            @field(
-                T,
-                opts.processFunction,
-            );
-        const childInfo =
-            @field(
-                T,
-                opts.childTypeName,
-            );
-        const renderInfo =
-            @field(
-                T,
-                opts.renderFunction,
-            );
-
-        std.debug.assert(info == .@"struct" and
-            @TypeOf(childInfo) == type and
-            @TypeOf(procInfo) == fn (SystemArrayType(childInfo), f64) ProcessError!void and
-            @TypeOf(renderInfo) == fn ([]const childInfo) void);
+    /// returns a tuple
+    /// order is dependent on the items
+    pub inline fn GetType(self: Signature) type {
+        comptime return @Tuple(self.items);
     }
-}
 
-/// options for a system.
-/// if used, place as a decl in the system struct named `systemOptions`
-/// ensure public.
-pub const SystemOptions = struct {
-    /// the name of the function which takes in the ArrayList and the `delta: f64` paramater
-    /// and alters the ArrayList
-    /// of type `fn (ArrayList(Child), f64) SystemError!void`
-    comptime processFunction: []const u8 = "process",
-    /// the name of the function which takes in the Array, does not alter it, and draws
-    /// of type `fn ([]const Child) void`
-    comptime renderFunction: []const u8 = "render",
-    /// Name of the child type constant in the struct
-    /// of type `type`
-    comptime childTypeName: []const u8 = "Child",
-
-    pub const declName = "systemOptions";
-
-    pub fn SystemHasOptions(comptime T: type) bool {
+    /// returns whether or not a structure (if not structure returns whether or not is contained)
+    /// qualifies for the signature
+    pub fn qualifies(comptime self: Signature, item: anytype) bool {
         comptime {
-            return @hasDecl(T, declName);
+            const T = @TypeOf(item);
+            if (@typeInfo(T) == .@"struct")
+                for (@typeInfo(T).@"struct".fields) |j| {
+                    if (!std.mem.containsAtLeastScalar2(type, self.items, j.type, 1))
+                        return false;
+                } else return true;
+
+            if (!std.mem.containsAtLeastScalar2(type, self.items, T, 1))
+                return false;
         }
     }
 };
 
-/// given a system type `T` searches for a decl of name ${SystemOptions.declName}
-/// if found returns that
-/// otherwise returns default
-pub fn getSystemOpts(comptime T: type) SystemOptions {
+/// `types` should be all the types the engine will attach,
+/// `types` are also infered from the `systems`
+pub fn Registry(comptime types: []const type, comptime systems: []const System) type {
     comptime {
-        return if (@hasDecl(T, SystemOptions.declName))
-            @field(T, SystemOptions.declName)
-        else
-            .{};
+        // step one: infer types from systems
+        const allSystemTypes = getSystemTypes(systems);
+
+        // step two: concat all of them into one list
+        const allTypes = comptimeConcatNoRepeats(type, types, allSystemTypes);
+        _ = allTypes;
+
+        return struct {};
     }
 }
 
-pub fn getSystemChildType(comptime T: type) type {
+inline fn getSystemTypes(comptime systems: []const System) []const type {
     comptime {
-        return @field(T, getSystemOpts(T).childTypeName);
+        if (systems.len == 0) {
+            return &.{};
+        } else {
+            return systems[0].Types.items ++ getSystemTypes(systems[1..]);
+        }
     }
 }
 
-pub fn getSystemType(comptime tag: SystemsEnum) type {
+/// Super innefficient.
+/// TODO: fix that
+fn comptimeConcatNoRepeats(comptime T: type, comptime a: []const T, comptime b: []const T) []T {
     comptime {
-        return @field(systems{}, @tagName(tag));
+        var array: []T = &.{};
+        outer: for (a ++ b) |item| {
+            for (array) |i| {
+                if (item == i)
+                    // item already appears
+                    continue :outer
+                else {
+                    array = array ++ &.{item};
+                }
+            }
+        }
+        return array;
     }
 }
 
-pub fn getSystemSliceType(comptime t: SystemsEnum) type {
-    comptime {
-        const System = getSystemType(t);
-        const opts = getSystemOpts(System);
-        return []const @field(System, opts.childTypeName);
-    }
-}
+pub const Entity = struct {
+    /// the current archetype for which this entity qualifies
+    record: *anyopaque,
 
-pub const ProcessError = error{ProcessError};
+    /// the signature of the archetype
+    sig: Signature,
+
+    /// the name of the entity
+    name: []const u8,
+
+    /// the index in the archetype which the data lies
+    index: usize,
+};
+
+pub const ProcessError = error{ProcessError} || std.mem.Allocator.Error;
