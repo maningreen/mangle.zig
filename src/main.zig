@@ -7,10 +7,18 @@ comptime {
     std.testing.refAllDecls(@This());
 }
 
+const Radius = f32;
+const Pos = rl.Vector2;
+const Colour = rl.Color;
+
 const testSystem: engine.System = .{
-    .Types = .{ .items = &.{ i32, u32 } },
+    .requirements = .{ .items = &.{ Radius, Colour, Pos } },
     .process = (struct {
-        fn process(_: anytype, _: engine.RegistryInformation) engine.ProcessError!void {}
+        fn process(val: anytype, _: engine.RegistryInformation) engine.ProcessError!void {
+            const T = testSystem.requirements.GetType();
+            const circle: T = @as(T, val);
+            rl.drawCircleV(circle[2], circle[0], circle[1]);
+        }
     }).process,
 };
 
@@ -20,18 +28,16 @@ pub fn main(init: std.process.Init) !void {
     const stdout = std.Io.File.stdout();
     defer stdout.close(io);
 
-    var outBuf: [64]u8 = undefined;
-    var writer = stdout.writer(io, &outBuf);
-    try writer.interface.print("Hello, World!\n", .{});
-    try writer.flush();
+    const T = struct {
+        r: Radius,
+        c: Colour,
+        p: Pos,
+    };
+    const Reg = engine.Registry(&.{T}, &.{testSystem});
 
-    const Arc = engine.Archetype(.{ .items = &.{ u32, u32 } });
-    var arc = Arc{ .data = .empty };
-    try arc.appendItem(init.gpa, .{ 3, 4 });
-    defer arc.deinit(init.gpa);
-
-    const Reg = engine.Registry(&.{i32}, &.{testSystem});
-    _ = Reg;
+    var rt: Reg = .init(io, init.gpa);
+    defer rt.deinit();
+    try rt.addValue(T{.c = .white, .p = .one(), .r = 30});
 
     rl.initWindow(1920, 1080, "test");
     defer rl.closeWindow();
