@@ -6,23 +6,53 @@ const meta = std.meta;
 const util = @import("util.zig");
 const StructField = std.builtin.Type.StructField;
 const StructAttrs = std.builtin.Type.StructField.Attributes;
+const engine = @This();
 
 const ArrayType = std.ArrayList;
 
 pub const System = struct {
     requirements: Signature,
-    /// it's ensured `anytype` will be of self.Type()
-    process: fn (anytype, RegistryInformation) ProcessError!void,
-    pub const ArrayType = @This().ArrayType;
+    /// it's ensured `*anyopaque` will be of self.Type()
+    process: fn (*anyopaque, RegistryInformation) ProcessError!void,
+    pub const ArrayType = engine.ArrayType;
 
     pub inline fn Type(comptime self: System) type {
-        return @This().ArrayType(self.requirements.GetType());
+        return self.requirements.GetType();
+    }
+
+    /// uses the first instances of all the types
+    pub fn from(comptime self: System, value: anytype) self.Type() {
+        const T = @TypeOf(value);
+        const tInfo = @typeInfo(T);
+        const fieldNames: []const []const u8 = comptime blk: {
+            if (!self.requirements.qualifies(T))
+                @compileError("Error, type '" ++ @typeName(T) ++ "' doesn't qualify for system requirements! (" ++ std.fmt.comptimePrint("{any}", .{self.requirements.items}));
+
+            var names: [self.requirements.items.len][]const u8 = undefined;
+
+            req: for (self.requirements.items, 0..) |J, i| {
+                for (tInfo.@"struct".fields) |f| {
+                    if (f.type == J) {
+                        names[i] = f.name;
+                        continue :req;
+                    }
+                }
+            }
+            break :blk &names;
+        };
+
+        var tuple: self.requirements.GetType() = undefined;
+        inline for (fieldNames, 0..) |fname, i| {
+            tuple[i] = @field(value, fname);
+        }
+        return tuple;
     }
 };
 
 pub const RegistryInformation = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
+    delta: f32,
 };
 
 pub const Signature = struct {
@@ -38,14 +68,18 @@ pub const Signature = struct {
     /// qualifies for the signature
     pub inline fn qualifies(comptime self: Signature, comptime T: type) bool {
         comptime {
-            if (@typeInfo(T) == .@"struct")
-                for (@typeInfo(T).@"struct".fields) |j| {
-                    if (!std.mem.containsAtLeastScalar2(type, self.items, j.type, 1))
-                        return false;
-                } else return true;
-
-            if (!std.mem.containsAtLeastScalar2(type, self.items, T, 1))
-                return false;
+            switch (@typeInfo(T)) {
+                .@"struct" => |tinfo| {
+                    return outer: for (self.items) |requirement| {
+                        for (tinfo.fields) |field| {
+                            if (requirement == field.type)
+                                continue :outer;
+                        } else break false;
+                    } else true;
+                },
+                else => if (!std.mem.containsAtLeastScalar2(type, self.items, T, 1))
+                    return false,
+            }
         }
     }
 };
@@ -77,6 +111,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     .info = .{
                         .gpa = gpa,
                         .io = io,
+                        .delta = 0.0,
                     },
                 };
             }
@@ -95,7 +130,32 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 try self.data[i].append(self.info.gpa, value);
             }
 
-            pub const systems: [requestedSystems.len]System = &requestedSystems;
+            pub fn process(self: *@This(), delta: f32) !void {
+                self.info.delta = delta;
+                inline for (allTypes) |T| {
+                    const arr = self.getArrayFromType(T);
+                    inline for (systems) |sys| {
+                        if (sys.requirements.qualifies(T)) {
+                            for (arr.items) |i| {
+                                var t = sys.from(i);
+                                inline for (@typeInfo(@TypeOf(t)).@"struct".fields) |f| {
+                                    std.log.debug("field '{s}': {any}", .{ f.name, @field(t, f.name) });
+                                }
+                                try sys.process(&t, self.info);
+                            }
+                        }
+                    }
+                }
+            }
+
+            fn getArrayFromType(self: *@This(), comptime T: type) *ArrayType(T) {
+                const i = comptime for (allTypes, 0..) |J, i| {
+                    if (T == J) break i;
+                } else @compileError("Error, type '" ++ @typeName(T) ++ "' is not in the Registry!");
+                return &self.data[i];
+            }
+
+            pub const systems: []const System = requestedSystems;
             pub const arrayTypes = valueTypes;
             pub const allTypes = types;
         };
