@@ -16,7 +16,7 @@ const testSystem: engine.System = .{
     .process = (struct {
         fn process(val: *anyopaque, _: engine.RegistryInformation) engine.ProcessError!void {
             const T = testSystem.requirements.GetType();
-            const circlePtr: *T = @alignCast(@ptrCast(val));
+            const circlePtr: *T = @ptrCast(@alignCast(val));
             const circle = circlePtr.*;
             rl.drawCircleV(circle.@"2", circle.@"0", circle.@"1");
         }
@@ -26,10 +26,10 @@ const testSystem: engine.System = .{
 const gravSystem: engine.System = .{
     .requirements = .{ .items = &.{ Pos, Gravity } },
     .process = (struct {
-        fn process(val: *anyopaque, _: engine.RegistryInformation) engine.ProcessError!void {
-            const T = testSystem.requirements.GetType();
-            const objPtr: *T = @alignCast(@ptrCast(val));
-            objPtr[0] -= 10;
+        fn process(val: *anyopaque, i: engine.RegistryInformation) engine.ProcessError!void {
+            const T = gravSystem.requirements.GetType();
+            const objPtr: *T = @ptrCast(@alignCast(val));
+            objPtr[0].y += i.delta * 100;
         }
     }).process,
 };
@@ -46,7 +46,7 @@ pub fn main(init: std.process.Init) !void {
         p: Pos,
         g: Gravity,
     };
-    const Reg = engine.Registry(&.{T}, &.{testSystem, gravSystem});
+    const Reg = engine.Registry(&.{T}, &.{ testSystem, gravSystem });
 
     var rt: Reg = .init(io, init.gpa);
     defer rt.deinit();
@@ -54,12 +54,11 @@ pub fn main(init: std.process.Init) !void {
     rl.initWindow(1920, 1080, "test");
     defer rl.closeWindow();
 
-    rl.beginDrawing();
-    try rt.addValue(T{.c = .blue, .p = rl.Vector2.one().scale(30), .r = 30, .g = void{}});
-    try rt.process(0);
-    rl.endDrawing();
-
-
+    try rt.addValue(T{ .c = .blue, .p = rl.Vector2.one().scale(30), .r = 30, .g = void{} });
     while (!rl.windowShouldClose()) {
+        rl.beginDrawing();
+        rl.clearBackground(.blank);
+        try rt.process(rl.getFrameTime());
+        rl.endDrawing();
     }
 }

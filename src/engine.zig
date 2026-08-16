@@ -21,6 +21,7 @@ pub const System = struct {
     }
 
     /// uses the first instances of all the types
+    /// also see: read()
     pub fn from(comptime self: System, value: anytype) self.Type() {
         const T = @TypeOf(value);
         const tInfo = @typeInfo(T);
@@ -46,6 +47,29 @@ pub const System = struct {
             tuple[i] = @field(value, fname);
         }
         return tuple;
+    }
+
+    /// uses the first instances of all the types in requirements
+    /// given a signature type and pointer copies values of the signature into the pointer
+    /// also see: from()
+    pub fn read(comptime self: System, comptime T: type, ptr: *T, value: self.Type()) void {
+        comptime {
+            if (!self.requirements.qualifies(T))
+                @compileError("Error: Type " ++ @typeName(T) ++ " does not qualify for system!");
+        }
+
+        switch (@typeInfo(T)) {
+            .@"struct" => |structInfo| {
+                inline for (self.requirements.items, 0..) |ReqField, i| {
+                    inline for (structInfo.fields) |field| {
+                        if (field.type == ReqField) {
+                            @field(ptr.*, field.name) = value[i];
+                        }
+                    }
+                }
+            },
+            else => @compileError("Error, type " ++ @typeName(T) ++ " is not a structure!"),
+        }
     }
 };
 
@@ -136,12 +160,10 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     const arr = self.getArrayFromType(T);
                     inline for (systems) |sys| {
                         if (sys.requirements.qualifies(T)) {
-                            for (arr.items) |i| {
-                                var t = sys.from(i);
-                                inline for (@typeInfo(@TypeOf(t)).@"struct".fields) |f| {
-                                    std.log.debug("field '{s}': {any}", .{ f.name, @field(t, f.name) });
-                                }
+                            for (arr.items) |*i| {
+                                var t = sys.from(i.*);
                                 try sys.process(&t, self.info);
+                                sys.read(T, i, t);
                             }
                         }
                     }
