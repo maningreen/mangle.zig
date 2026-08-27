@@ -22,6 +22,7 @@ pub const System = struct {
 
     /// uses the first instances of all the types
     /// also see: read()
+    /// maybe: provide recursion in structures for composition
     pub fn from(comptime self: System, value: anytype) self.Type() {
         const T = @TypeOf(value);
         const tInfo = @typeInfo(T);
@@ -52,6 +53,7 @@ pub const System = struct {
     /// uses the first instances of all the types in requirements
     /// given a signature type and pointer copies values of the signature into the pointer
     /// also see: from()
+    /// maybe: provide recursion in structures for composition
     pub fn read(comptime self: System, comptime T: type, ptr: *T, value: self.Type()) void {
         comptime {
             if (!self.requirements.qualifies(T))
@@ -90,6 +92,7 @@ pub const Signature = struct {
 
     /// returns whether or not a structure (if not structure returns whether or not is contained)
     /// qualifies for the signature
+    /// maybe: provide recursion in structures for composition
     pub inline fn qualifies(comptime self: Signature, comptime T: type) bool {
         comptime {
             switch (@typeInfo(T)) {
