@@ -1,5 +1,8 @@
 const std = @import("std");
 
+const systemFile: []const u8 = "systems.zig";
+const typeFile: []const u8 = "types.zig";
+
 const Library = union(enum) {
     dependency: struct {
         name: []const u8,
@@ -32,10 +35,12 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const bakeTypes = b.step("bake", "generates ecsTypes.zig which holds all of the ecs types");
-    _, const generatedPath = generateSystemsFile(b, "ecsTypes.zig", "systems");
+    const bakeTypes = b.step("bake", "generates ecsTypes.zig and systems.zig which holds all of information for the system");
+    _, const generatedPathSys = generateEcsFile(b, systemFile, "systems");
+    _, const generatedPathTypes = generateEcsFile(b, typeFile, "types");
     const updated = b.addUpdateSourceFiles();
-    updated.addCopyFileToSource(generatedPath, "./src/ecsTypes.zig");
+    updated.addCopyFileToSource(generatedPathSys, "./src/" ++ systemFile);
+    updated.addCopyFileToSource(generatedPathTypes, "./src/" ++ typeFile);
     bakeTypes.dependOn(&updated.step);
 
     const mainModule = b.addModule("main", .{
@@ -100,8 +105,8 @@ pub fn compileFilesInDirectory(
     return files.toOwnedSlice(gpa);
 }
 
-/// generates the file with the systems, places it in `src`
-pub fn generateSystemsFile(b: *std.Build, name: []const u8, dir: []const u8) @Tuple(&.{ *std.Build.Step.WriteFile, std.Build.LazyPath }) {
+/// generates the file with the types, places it in `src`
+pub fn generateEcsFile(b: *std.Build, name: []const u8, dir: []const u8) @Tuple(&.{ *std.Build.Step.WriteFile, std.Build.LazyPath }) {
     const files = compileFilesInDirectory(
         b.graph.io,
         std.mem.concat(
@@ -115,9 +120,9 @@ pub fn generateSystemsFile(b: *std.Build, name: []const u8, dir: []const u8) @Tu
 
     var contents = std.Io.Writer.Allocating.init(b.allocator);
     contents.writer.print(
-        \\pub const systems = [_]type{{
+        \\pub const {s} = [_]type{{
         \\
-    , .{}) catch |err| @panic(@errorName(err));
+    , .{dir}) catch |err| @panic(@errorName(err));
 
     for (files) |file| {
         contents.writer.print(
