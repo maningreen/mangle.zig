@@ -82,67 +82,121 @@ pub const Signature = struct {
     }
 };
 
-const compositionFormat = "registry_composition_{d}";
+const flags = struct {
+    const formats = struct {
+        const composed = "__internal_registry_composed_flag__";
+        const leaf = "__internal_registry_leaf_flag__";
+    };
 
-pub const FieldStats = enum {
-    owned,
-    composed,
+    const Flags = enum {
+        /// default for field structures
+        /// processed by systems
+        owned,
+
+        /// flattens the field to top level for systems
+        composed,
+
+        /// equivilent to a single value
+        /// fields are not recursed into
+        /// but can be processed by systems
+        leaf,
+    };
+
+    /// used to tag a type with a metadata tag
+    /// metadata *must* contain no formatting
+    ///> [!WARNING]
+    ///>  `ApplyMetadata(T) != T` will always be true
+    ///>  Declarations are lost, on ApplyMetadata(T)
+    ///>  Methods are lost on ApplyMetadata(T)
+    ///
+    ///>[!NOTE]
+    ///>  todo: allow 'unwrapping'
+    ///>  todo: add format checking
+    fn ApplyMetadata(comptime T: type, format: []const u8) type {
+        comptime {
+            // deconstruct T
+            const info = switch (@typeInfo(T)) {
+                .@"struct" => |sinfo| sinfo,
+                else => @compileError("Error, type " ++ @typeName(T) ++ " is not a type which can be composed!"),
+            };
+
+            // construct structure information reflecting the input
+            var fieldNames: [info.fields.len + 1][]const u8 = undefined;
+            var fieldTypes: [info.fields.len + 1]type = undefined;
+            var fieldAttrs: [info.fields.len + 1]std.builtin.Type.StructField.Attributes = undefined;
+            fieldNames[0] = format;
+            fieldTypes[0] = void;
+            fieldAttrs[0] = .{
+                .default_value_ptr = null,
+                .@"align" = null,
+                .@"comptime" = false,
+            };
+            for (info.fields, 1..) |field, j| {
+                fieldNames[j] = field.name;
+                fieldTypes[j] = field.type;
+                fieldAttrs[j] = std.builtin.Type.StructField.Attributes{
+                    .default_value_ptr = field.default_value_ptr,
+                    .@"align" = field.alignment,
+                    .@"comptime" = field.is_comptime,
+                };
+            }
+
+            return @Struct(.auto, info.backing_integer, &fieldNames, &fieldTypes, &fieldAttrs);
+        }
+    }
+
+    /// # compose
+    ///
+    /// used to tag a type as a composition
+    ///> [!WARNING]
+    ///>  `Compose(T) != T` will always be true
+    ///>  Declarations are lost, on Compose(T)
+    ///>  Methods are lost on Compose(T)
+    ///
+    ///> [!NOTE]
+    ///>  [See also `Leaf`](#leaf)
+    ///>  TODO: allow 'unwrapping'
+    inline fn Compose(comptime T: type) type {
+        return ApplyMetadata(T, formats.composed);
+    }
+
+    /// # leaf
+    ///
+    /// used to tag a type as a leaf
+    ///> [!WARNING]
+    ///>  `Leaf(T) != T` will always be true
+    ///>  Declarations are lost, on Leaf(T)
+    ///>  Methods are lost on Leaf(T)
+    ///
+    ///> [!NOTE]
+    ///>  [See also `Compose`](#compose)
+    ///>  TODO: allow 'unwrapping'
+    inline fn Leaf(comptime T: type) type {
+        return ApplyMetadata(T, formats.leaf);
+    }
 };
 
-/// used to tag a type as composition
-///     Warnings:
-///         `Compose(T) != T` will always be true
-///         Declarations are lost, on Compose(T)
-///         Methods are lost on Compose(T)
-///     TODO: allow 'unwrapping'
-pub inline fn Compose(comptime T: type) type {
-    comptime {
-        // deconstruct T
-        const info = switch (@typeInfo(T)) {
-            .@"struct" => |sinfo| sinfo,
-            else => @compileError("Error, type " ++ @typeName(T) ++ " is not a type which can be composed!"),
-        };
+pub const Compose = flags.Compose;
 
-        // construct name for field
-        var i: comptime_int = 0;
-        const name = outer: while (info.fields.len > 0) : (i += 1) {
-            for (info.fields) |field| {
-                if (std.mem.eql(u8, std.fmt.comptimePrint(compositionFormat, .{ i }), field.name))
-                    continue :outer;
-            } else std.fmt.comptimePrint(compositionFormat, .{ i });
-        } else std.fmt.comptimePrint(compositionFormat, .{ i });
-        // construct structure information reflecting the input
-        var fieldNames: [info.fields.len + 1][]const u8 = undefined;
-        var fieldTypes: [info.fields.len + 1]type = undefined;
-        var fieldAttrs: [info.fields.len + 1]std.builtin.Type.StructField.Attributes = undefined;
-        fieldNames[0] = name;
-        fieldTypes[0] = void;
-        fieldAttrs[0] = .{
-            .default_value_ptr = null,
-            .@"align" = null,
-            .@"comptime" = false,
-        };
-        for (info.fields, 1..) |field, j| {
-            fieldNames[j] = field.name;
-            fieldTypes[j] = field.type;
-            fieldAttrs[j] = std.builtin.Type.StructField.Attributes{
-                .default_value_ptr = field.default_value_ptr,
-                .@"align" = field.alignment,
-                .@"comptime" = field.is_comptime,
-            };
-        }
-
-        return @Struct(.auto, info.backing_integer, &fieldNames, &fieldTypes, &fieldAttrs);
-    }
-}
-
+/// # own
+///
 /// used to tag a type as ownership (default behavior)
+/// can be omitted with no semantic differences
+/// `Own(T) == T`
 pub inline fn Own(comptime T: type) type {
     return T;
 }
 
-pub fn fieldStatus() !void {
-
+pub fn fieldFlag(T: type) flags.Flags {
+    const info = switch (@typeInfo(T)) {
+        .@"struct" => |i| i,
+        else => @compileError("Error, type " ++ @typeName(T) ++ " is not a struct!"),
+    };
+    inline for (&.{ .leaf, .composed }) |flag| {
+        const flagMeta = @field(flags.formats, @tagName(flag));
+        for (info.fields) |field|
+            if (std.mem.eql(u8, flagMeta, field.name)) return flag;
+    } else return .owned;
 }
 
 /// `types` should be all the types the engine will utilize,
