@@ -89,9 +89,6 @@ pub const FieldStats = enum {
     composed,
 };
 
-test "Compose" {
-}
-
 /// used to tag a type as composition
 ///     Warnings:
 ///         `Compose(T) != T` will always be true
@@ -110,10 +107,9 @@ pub inline fn Compose(comptime T: type) type {
         var i: comptime_int = 0;
         const name = outer: while (info.fields.len > 0) : (i += 1) {
             for (info.fields) |field| {
-                if (!std.mem.eql(u8, std.fmt.comptimePrint(compositionFormat, .{ i }), field.name)) {
-                    break :outer std.fmt.comptimePrint(compositionFormat, .{ i });
-                }
-            }
+                if (std.mem.eql(u8, std.fmt.comptimePrint(compositionFormat, .{ i }), field.name))
+                    continue :outer;
+            } else std.fmt.comptimePrint(compositionFormat, .{ i });
         } else std.fmt.comptimePrint(compositionFormat, .{ i });
         // construct structure information reflecting the input
         var fieldNames: [info.fields.len + 1][]const u8 = undefined;
