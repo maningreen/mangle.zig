@@ -8,77 +8,48 @@ const StructField = std.builtin.Type.StructField;
 const StructAttrs = std.builtin.Type.StructField.Attributes;
 const engine = @This();
 
-const ArrayType = std.ArrayList;
-
-pub const System = struct {
-    requirements: Signature,
-    /// it's ensured `*anyopaque` will be of self.Type()
-    process: fn (*anyopaque, RegistryInformation) ProcessError!void,
-    pub const ArrayType = engine.ArrayType;
-
-    pub inline fn Type(comptime self: System) type {
-        return self.requirements.GetType();
-    }
-
-    /// uses the first instances of all the types
-    /// also see: read()
-    /// maybe: provide recursion in structures for composition
-    pub fn from(comptime self: System, value: anytype) self.Type() {
-        const T = @TypeOf(value);
-        const tInfo = @typeInfo(T);
-        const fieldNames: []const []const u8 = comptime blk: {
-            if (!self.requirements.qualifies(T))
-                @compileError("Error, type '" ++ @typeName(T) ++ "' doesn't qualify for system requirements! (" ++ std.fmt.comptimePrint("{any}", .{self.requirements.items}));
-
-            var names: [self.requirements.items.len][]const u8 = undefined;
-
-            req: for (self.requirements.items, 0..) |J, i| {
-                for (tInfo.@"struct".fields) |f| {
-                    if (f.type == J) {
-                        names[i] = f.name;
-                        continue :req;
-                    }
-                }
-            }
-            break :blk &names;
-        };
-
-        var tuple: self.requirements.GetType() = undefined;
-        inline for (fieldNames, 0..) |fname, i| {
-            tuple[i] = @field(value, fname);
-        }
-        return tuple;
-    }
-
-    /// uses the first instances of all the types in requirements
-    /// given a signature type and pointer copies values of the signature into the pointer
-    /// also see: from()
-    /// maybe: provide recursion in structures for composition
-    pub fn read(comptime self: System, comptime T: type, ptr: *T, value: self.Type()) void {
-        comptime {
-            if (!self.requirements.qualifies(T))
-                @compileError("Error: Type " ++ @typeName(T) ++ " does not qualify for system!");
-        }
-
-        switch (@typeInfo(T)) {
-            .@"struct" => |structInfo| {
-                inline for (self.requirements.items, 0..) |ReqField, i| {
-                    inline for (structInfo.fields) |field| {
-                        if (field.type == ReqField) {
-                            @field(ptr.*, field.name) = value[i];
-                        }
-                    }
-                }
-            },
-            else => @compileError("Error, type " ++ @typeName(T) ++ " is not a structure!"),
-        }
-    }
-};
+pub const Array = std.ArrayList;
 
 pub const RegistryInformation = struct {
     gpa: std.mem.Allocator,
     io: std.Io,
     delta: f32,
+};
+
+pub const system = struct {
+    pub const Error = error{ProcessError} || std.mem.Allocator.Error;
+    /// Name and type of the function of the system
+    pub const function = struct {
+        const name = "process";
+        /// Should be read as
+        /// ```zig
+        /// fn (comptime T: type, _: []T, _: RegistryInformation) Error!void`
+        /// ```
+        pub const Type: type = fn (comptime type, anytype, RegistryInformation) Error!void;
+    };
+
+    /// Name and type of the signature of the system
+    pub const signature = struct {
+        pub const name = "requirements";
+        pub const Type = Signature;
+    };
+
+    pub fn qualifies(comptime System: type) bool {
+        switch (@typeInfo(System)) {
+            .@"struct" => |info| {
+                for (info.decls) |d| {
+                    if (std.mem.eql(u8, d.name, signature.name) and @TypeOf(@field(System, d.name)) == signature.Type)
+                        break;
+                } else return false;
+                for (info.decls) |d| {
+                    if (std.mem.eql(u8, d.name, function.name) and @TypeOf(@field(System, d.name)) == function.Type)
+                        break;
+                } else return false;
+                return true;
+            },
+            else => return false,
+        }
+    }
 };
 
 pub const Signature = struct {
@@ -104,26 +75,96 @@ pub const Signature = struct {
                         } else break false;
                     } else true;
                 },
-                else => if (!std.mem.containsAtLeastScalar2(type, self.items, T, 1))
+                else => if (!std.mem.containsAtLeastScalar2(type, self, T, 1))
                     return false,
             }
         }
     }
 };
 
+const compositionFormat = "registry_composition_{d}";
+
+pub const FieldStats = enum {
+    owned,
+    composed,
+};
+
+test "Compose" {
+}
+
+/// used to tag a type as composition
+///     Warnings:
+///         `Compose(T) != T` will always be true
+///         Declarations are lost, on Compose(T)
+///         Methods are lost on Compose(T)
+///     TODO: allow 'unwrapping'
+pub inline fn Compose(comptime T: type) type {
+    comptime {
+        // deconstruct T
+        const info = switch (@typeInfo(T)) {
+            .@"struct" => |sinfo| sinfo,
+            else => @compileError("Error, type " ++ @typeName(T) ++ " is not a type which can be composed!"),
+        };
+
+        // construct name for field
+        var i: comptime_int = 0;
+        const name = outer: while (info.fields.len > 0) : (i += 1) {
+            for (info.fields) |field| {
+                if (!std.mem.eql(u8, std.fmt.comptimePrint(compositionFormat, .{ i }), field.name)) {
+                    break :outer std.fmt.comptimePrint(compositionFormat, .{ i });
+                }
+            }
+        } else std.fmt.comptimePrint(compositionFormat, .{ i });
+        // construct structure information reflecting the input
+        var fieldNames: [info.fields.len + 1][]const u8 = undefined;
+        var fieldTypes: [info.fields.len + 1]type = undefined;
+        var fieldAttrs: [info.fields.len + 1]std.builtin.Type.StructField.Attributes = undefined;
+        fieldNames[0] = name;
+        fieldTypes[0] = void;
+        fieldAttrs[0] = .{
+            .default_value_ptr = null,
+            .@"align" = null,
+            .@"comptime" = false,
+        };
+        for (info.fields, 1..) |field, j| {
+            fieldNames[j] = field.name;
+            fieldTypes[j] = field.type;
+            fieldAttrs[j] = std.builtin.Type.StructField.Attributes{
+                .default_value_ptr = field.default_value_ptr,
+                .@"align" = field.alignment,
+                .@"comptime" = field.is_comptime,
+            };
+        }
+
+        return @Struct(.auto, info.backing_integer, &fieldNames, &fieldTypes, &fieldAttrs);
+    }
+}
+
+/// used to tag a type as ownership (default behavior)
+pub inline fn Own(comptime T: type) type {
+    return T;
+}
+
+pub fn fieldStatus() !void {
+
+}
+
 /// `types` should be all the types the engine will utilize,
 /// `types` *will not* be infered by systems.
-pub fn Registry(comptime types: []const type, comptime requestedSystems: []const System) type {
+pub fn Registry(comptime types: []const type, comptime requestedSystems: []const type) type {
     comptime {
         // create structure of arrays
         var valueTypes: [types.len]type = undefined;
         for (types, 0..) |T, i|
-            valueTypes[i] = ArrayType(T);
+            valueTypes[i] = Array(T);
+
+        for (requestedSystems) |System|
+            std.debug.assert(system.qualifies(System));
 
         const DataType = @Tuple(&valueTypes);
 
         return struct {
-            /// the raw data of all the types, a tuple of @This().arrayTypes
+            /// the raw data of all the types, a tuple of @This().array
             /// recommended to not access manually
             data: DataType,
             info: RegistryInformation,
@@ -161,30 +202,22 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 self.info.delta = delta;
                 inline for (allTypes) |T| {
                     const arr = self.getArrayFromType(T);
-                    inline for (systems) |sys| {
-                        if (sys.requirements.qualifies(T)) {
-                            for (arr.items) |*i| {
-                                var t = sys.from(i.*);
-                                try sys.process(&t, self.info);
-                                sys.read(T, i, t);
-                            }
-                        }
-                    }
+                    inline for (systems) |Sys|
+                        if (Sys.requirements.qualifies(T))
+                            try Sys.process(T, arr, self.info);
                 }
             }
 
-            fn getArrayFromType(self: *@This(), comptime T: type) *ArrayType(T) {
+            fn getArrayFromType(self: *@This(), comptime T: type) *Array(T) {
                 const i = comptime for (allTypes, 0..) |J, i| {
                     if (T == J) break i;
                 } else @compileError("Error, type '" ++ @typeName(T) ++ "' is not in the Registry!");
                 return &self.data[i];
             }
 
-            pub const systems: []const System = requestedSystems;
+            pub const systems: []const type = requestedSystems;
             pub const arrayTypes = valueTypes;
             pub const allTypes = types;
         };
     }
 }
-
-pub const ProcessError = error{ProcessError} || std.mem.Allocator.Error;

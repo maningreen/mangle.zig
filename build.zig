@@ -35,14 +35,6 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const bakeTypes = b.step("bake", "generates ecsTypes.zig and systems.zig which holds all of information for the system");
-    _, const generatedPathSys = generateEcsFile(b, systemFile, "systems");
-    _, const generatedPathTypes = generateEcsFile(b, typeFile, "types");
-    const updated = b.addUpdateSourceFiles();
-    updated.addCopyFileToSource(generatedPathSys, "./src/" ++ systemFile);
-    updated.addCopyFileToSource(generatedPathTypes, "./src/" ++ typeFile);
-    bakeTypes.dependOn(&updated.step);
-
     const mainModule = b.addModule("main", .{
         .optimize = optimize,
         .target = target,
@@ -103,39 +95,4 @@ pub fn compileFilesInDirectory(
         }
     }
     return files.toOwnedSlice(gpa);
-}
-
-/// generates the file with the types, places it in `src`
-pub fn generateEcsFile(b: *std.Build, name: []const u8, dir: []const u8) @Tuple(&.{ *std.Build.Step.WriteFile, std.Build.LazyPath }) {
-    const files = compileFilesInDirectory(
-        b.graph.io,
-        std.mem.concat(
-            b.allocator,
-            u8,
-            &.{ "src/", dir },
-        ) catch |err| @panic(@errorName(err)),
-        b.allocator,
-    ) catch |err| @panic(@errorName(err));
-    const write = b.addWriteFiles();
-
-    var contents = std.Io.Writer.Allocating.init(b.allocator);
-    contents.writer.print(
-        \\pub const {s} = [_]type{{
-        \\
-    , .{dir}) catch |err| @panic(@errorName(err));
-
-    for (files) |file| {
-        contents.writer.print(
-            \\    @import("{s}/{s}"),
-            \\
-        , .{ dir, file }) catch |err| @panic(@errorName(err));
-    }
-
-    contents.writer.print(
-        \\}};
-    , .{}) catch |err| @panic(@errorName(err));
-
-    const written = write.add(name, contents.toOwnedSlice() catch |err| @panic(@errorName(err)));
-
-    return .{ write, written };
 }

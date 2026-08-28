@@ -38,7 +38,9 @@ pub fn main(init: std.process.Init) !void {
         // g: Gravity,
     // };
     // std.log.debug("size of T: {}", .{@sizeOf(T)});
-    const Reg = engine.Registry(&.{}, &.{});
+    const T = struct {};
+    try std.testing.expect(engine.Compose(T) != T);
+    const Reg = engine.Registry(@import("types.zig").types, @import("systems.zig").systems);
 
     var rt: Reg = .init(io, init.gpa);
 
