@@ -2,7 +2,8 @@ const std = @import("std");
 
 /// Given a type, say `std.mem.Allocator`
 /// return the basename of the type, in this case `Allocator`
-/// | Warning: May be ambiguous for nonunique names, for indexing use @typeName()
+/// > [!WARNING]
+/// > May be ambiguous for nonunique names, when being unique matters, such as indexing use `@typeName()`
 pub fn getBaseName(comptime T: type) [:0]const u8 {
     comptime {
         const full_name = @typeName(T);
