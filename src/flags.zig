@@ -92,9 +92,11 @@ pub inline fn Compose(comptime T: type) type {
 ///>  [See also `Compose`](#compose)
 ///>  TODO: allow 'unwrapping'
 pub inline fn Leaf(comptime T: type) type {
-    if (fieldFlag(T) != .leaf and fieldFlag(T) != .owned)
-        @compileError("Error type '" ++ @typeName(T) ++ "'Already has metadata flag!");
-    return ApplyMetadata(T, formats.leaf);
+    comptime {
+        if (fieldFlag(T) != .leaf and fieldFlag(T) != .owned)
+            @compileError("Error type '" ++ @typeName(T) ++ "'Already has metadata flag!");
+        return ApplyMetadata(T, formats.leaf);
+    }
 }
 
 /// # own
@@ -106,7 +108,9 @@ pub inline fn Leaf(comptime T: type) type {
 ///> Intended for explicit ownership for readability
 ///> `Own(T) == T`
 pub inline fn Own(comptime T: type) type {
-    return T;
+    comptime {
+        return T;
+    }
 }
 
 /// # flags.Flatten
@@ -261,13 +265,15 @@ pub fn isFlagFormat(str: []const u8) bool {
 /// If not `@typeInfo(T) == .@"struct"`
 /// returns .leaf
 pub fn fieldFlag(T: type) Flags {
-    const info = switch (@typeInfo(T)) {
-        .@"struct" => |i| i,
-        else => return .leaf,
-    };
-    inline for (&.{ .leaf, .composed }) |flag| {
-        const flagMeta = @field(formats, @tagName(flag));
-        for (info.fields) |field|
-            if (std.mem.eql(u8, flagMeta, field.name)) return flag;
-    } else return .owned;
+    comptime {
+        const info = switch (@typeInfo(T)) {
+            .@"struct" => |i| i,
+            else => return .leaf,
+        };
+        for (&.{ .leaf, .composed }) |flag| {
+            const flagMeta = @field(formats, @tagName(flag));
+            for (info.fields) |field|
+                if (std.mem.eql(u8, flagMeta, field.name)) return flag;
+        } else return .owned;
+    }
 }

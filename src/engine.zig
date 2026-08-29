@@ -83,17 +83,19 @@ pub const system = struct {
         ///> Asserts `self.qualifies(T)`
         ///> Returns a memory equivilent type to T
         pub inline fn NamedType(comptime self: Signature, comptime T: type) type {
-            comptime var info = util.deStruct(T);
-            if (!self.qualifies(T)) @compileError("Error, type '" ++ @typeName(T) ++ "' does not qualify!");
-            field: inline for (comptime self.fields) |field| {
-                inline for (info.fieldTypes, 0..) |U, i| {
-                    if (U == field.type) {
-                        info.fieldNames[i] = field.name;
-                        continue :field;
+            comptime {
+                var info = util.deStruct(T);
+                if (!self.qualifies(T)) @compileError("Error, type '" ++ @typeName(T) ++ "' does not qualify!");
+                field: for (self.fields) |field| {
+                    for (info.fieldTypes, 0..) |U, i| {
+                        if (U == field.type) {
+                            info.fieldNames[i] = field.name;
+                            continue :field;
+                        }
                     }
                 }
+                return info.Construct();
             }
-            return info.Construct();
         }
     };
 
@@ -101,19 +103,21 @@ pub const system = struct {
     ///
     /// Checks whether the inputed system type qualifies according to `fields`
     pub fn qualifies(comptime System: type) bool {
-        switch (@typeInfo(System)) {
-            .@"struct" => |info| {
-                for (info.decls) |d| {
-                    if (std.mem.eql(u8, d.name, fields.signature.name) and @TypeOf(@field(System, d.name)) == fields.signature.Type)
-                        break;
-                } else return false;
-                for (info.decls) |d| {
-                    if (std.mem.eql(u8, d.name, fields.function.name) and @TypeOf(@field(System, d.name)) == fields.function.Type)
-                        break;
-                } else return false;
-                return true;
-            },
-            else => return false,
+        comptime {
+            switch (@typeInfo(System)) {
+                .@"struct" => |info| {
+                    for (info.decls) |d| {
+                        if (std.mem.eql(u8, d.name, fields.signature.name) and @TypeOf(@field(System, d.name)) == fields.signature.Type)
+                            break;
+                    } else return false;
+                    for (info.decls) |d| {
+                        if (std.mem.eql(u8, d.name, fields.function.name) and @TypeOf(@field(System, d.name)) == fields.function.Type)
+                            break;
+                    } else return false;
+                    return true;
+                },
+                else => return false,
+            }
         }
     }
 
