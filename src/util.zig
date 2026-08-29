@@ -69,3 +69,24 @@ pub fn deStruct(comptime T: type) DeStructInfo(@typeInfo(T).@"struct".fields.len
     }
     return ret;
 }
+
+pub inline fn strEql(a: []const u8, b: []const u8) bool {
+    return std.mem.eql(u8, a, b);
+}
+
+///# structEql
+///
+///goes through the fields and applies the `==` operator
+///
+///> [!WARNING]
+///> does not (yet) cover pointers and substructure fields
+pub inline fn structEql(a: anytype, b: @TypeOf(a)) bool {
+    const T = @TypeOf(a);
+    std.debug.assert(@typeInfo(T) == .@"struct");
+    const tInfo = comptime @typeInfo(T).@"struct";
+
+    var eql: bool = true;
+    inline for (tInfo.fields) |field|
+        eql = eql and @field(a, field.name) == @field(b, field.name);
+    return eql;
+}

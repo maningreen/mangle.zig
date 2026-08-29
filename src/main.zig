@@ -1,6 +1,7 @@
 const std = @import("std");
 const engine = @import("engine.zig");
 const rl = @import("raylib");
+const Grect = @import("types/gravRectangle.zig");
 
 // const testSystem: engine.System = .{
 // .requirements = .{ .items = &.{ Radius, Colour, Pos } },
@@ -32,20 +33,24 @@ pub fn main(init: std.process.Init) !void {
     defer stdout.close(io);
 
     // const T = struct {
-        // r: Radius,
-        // c: Colour,
-        // p: Pos,
-        // g: Gravity,
+    // r: Radius,
+    // c: Colour,
+    // p: Pos,
+    // g: Gravity,
     // };
     // std.log.debug("size of T: {}", .{@sizeOf(T)});
     const T = struct {};
     try std.testing.expect(engine.Compose(T) != T);
+
     const Reg = engine.Registry(@import("types.zig").types, @import("systems.zig").systems);
 
     var rt: Reg = .init(io, init.gpa);
+    try rt.addValue(Grect{.grav = void{}, .rect = .{ .pos = .{ .x = 0, .y = 0 }, .dem = .{ .x = 30, .y = 30 }}});
+    defer rt.deinit();
 
     const ratio: rl.Vector2 = .{ .x = 1920, .y = 1080 };
     const scale: f32 = 0.9;
+    rl.setTraceLogLevel(.warning);
     rl.initWindow(@intFromFloat(ratio.scale(scale).x), @intFromFloat(ratio.scale(scale).y), "test");
     defer rl.closeWindow();
 

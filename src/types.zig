@@ -1,8 +1,11 @@
-const rl = @import("Raylib");
+const rl = @import("raylib");
 
-const Velocity = rl.Vector2;
-const Position = rl.Vector2;
+pub const Velocity = rl.Vector2;
+pub const Position = rl.Vector2;
+pub const Dimensions = rl.Vector2;
+pub const Gravity = void;
 
 pub const types: []const type = &.{
-    struct {},
+    @import("types/rectangle.zig"),
+    @import("types/gravRectangle.zig"),
 };

@@ -7,6 +7,9 @@ const util = @import("util.zig");
 const StructField = std.builtin.Type.StructField;
 const StructAttrs = std.builtin.Type.StructField.Attributes;
 const engine = @This();
+pub const flags = @import("flags.zig");
+pub const Compose = flags.Compose;
+pub const Leaf = flags.Leaf;
 
 pub const Array = std.ArrayList;
 
@@ -19,6 +22,7 @@ pub const RegistryInformation = struct {
 pub const system = struct {
     pub const Error = error{ProcessError} || std.mem.Allocator.Error;
 
+    /// Defines required fields used in system.qualifies
     pub const fields = struct {
         /// Name and type of the function of the system
         pub const function = struct {
@@ -36,36 +40,66 @@ pub const system = struct {
             pub const Type = Signature;
         };
     };
-    pub const Signature = struct {
-        items: []const type,
 
-        /// returns a tuple
-        /// order is dependent on the items
-        pub inline fn GetType(self: Signature) type {
-            comptime return @Tuple(self.items);
-        }
+    pub const Signature = struct {
+        /// Used to represent a signature requirement
+        pub const Item = struct {
+            /// Used to filter qualifications
+            type: type,
+
+            /// Used for systems to use dot syntax access
+            /// Ignored in qualifications
+            name: []const u8,
+        };
+
+        /// Requirements
+        fields: []const Item,
 
         /// returns whether or not a structure (if not structure returns whether or not is contained)
         /// qualifies for the signature
         /// maybe: provide recursion in structures for composition
         pub inline fn qualifies(comptime self: Signature, comptime T: type) bool {
             comptime {
-                switch (@typeInfo(flags.Flatten(T))) {
-                    .@"struct" => |tinfo| {
-                        return outer: for (self.items) |requirement| {
-                            for (tinfo.fields) |field| {
-                                if (requirement == field.type)
-                                    continue :outer;
-                            } else break false;
-                        } else true;
-                    },
-                    else => if (!std.mem.containsAtLeastScalar2(type, self, T, 1))
-                        return false,
+                const info = switch (@typeInfo(flags.Flatten(T))) {
+                    .@"struct" => |i| i,
+                    else => @compileError("Error, type '" ++ @typeName(T) ++ "' is not a struct!"),
+                };
+                outer: for (self.fields) |Requirement| {
+                    for (info.fields) |field| {
+                        if (field.type == Requirement.type) continue :outer;
+                    } else return false;
+                }
+                return true;
+            }
+        }
+
+        /// # NamedType
+        ///
+        /// Returns the inputed structure with names according to the fields
+        ///
+        ///> [!NOTE]
+        ///> `self.NamedType(T) != T` when `self.qualifies(T)` and `self.fields.len > 0`
+        ///> Flattens T. See [Flatten](#flatten)
+        ///> Asserts `self.qualifies(T)`
+        ///> Returns a memory equivilent type to T
+        pub inline fn NamedType(comptime self: Signature, comptime T: type) type {
+            comptime var info = util.deStruct(T);
+            if (!self.qualifies(T)) @compileError("Error, type '" ++ @typeName(T) ++ "' does not qualify!");
+            field: inline for (comptime self.fields) |field| {
+                inline for (info.fieldTypes, 0..) |U, i| {
+                    if (U == field.type) {
+                        info.fieldNames[i] = field.name;
+                        continue :field;
+                    }
                 }
             }
+            return info.Construct();
         }
     };
 
+    /// # qualifies
+    ///
+    /// Checks whether the inputed system type qualifies according to `fields`
     pub fn qualifies(comptime System: type) bool {
         switch (@typeInfo(System)) {
             .@"struct" => |info| {
@@ -83,226 +117,23 @@ pub const system = struct {
         }
     }
 
-    pub fn getFieldFromType(comptime T: type, instance: anytype) *T {
-        const U = @TypeOf(instance);
-        const info = switch (@typeInfo(U)) {
-            .@"struct" => |i| i,
-            else => @compileError("Error: type '" ++ @typeName(U) ++ "' is not a struct!"),
-        };
-        for (info.fields) |field| {
-            const V = field.type;
-            switch (@typeInfo(V)) {
-                .@"struct" => {},
-                else => if (V == T) return &@field(instance, field.name) else continue,
-            }
-        } else @compileError("Error, type '" ++ @typeName(T) ++ "' is not in struct '" ++ @typeName(U) ++ "' as a leaf or owned!");
-    }
+    // Removed.
+    //
+    // pub fn getFieldFromType(comptime T: type, instance: anytype) *T {
+    // const U = @TypeOf(instance);
+    // const info = switch (@typeInfo(U)) {
+    // .@"struct" => |i| i,
+    // else => @compileError("Error: type '" ++ @typeName(U) ++ "' is not a struct!"),
+    // };
+    // for (info.fields) |field| {
+    // const V = field.type;
+    // switch (@typeInfo(V)) {
+    // .@"struct" => {},
+    // else => if (V == T) return &@field(instance, field.name) else continue,
+    // }
+    // } else @compileError("Error, type '" ++ @typeName(T) ++ "' is not in struct '" ++ @typeName(U) ++ "' as a leaf or owned!");
+    // }
 };
-
-const flags = struct {
-    const formats = struct {
-        const composed = "__internal_registry_composed_flag__";
-        const leaf = "__internal_registry_leaf_flag__";
-    };
-
-    const Flags = enum {
-        /// default for field structures
-        /// processed by systems
-        owned,
-
-        /// flattens the field to top level for systems
-        composed,
-
-        /// equivilent to a single value
-        /// fields are not recursed into
-        /// but can be processed by systems
-        leaf,
-    };
-
-    /// used to tag a type with a metadata tag
-    /// metadata *must* contain no formatting
-    ///> [!WARNING]
-    ///>  `ApplyMetadata(T) != T` will always be true
-    ///>  Declarations are lost, on ApplyMetadata(T)
-    ///>  Methods are lost on ApplyMetadata(T)
-    ///
-    ///>[!NOTE]
-    ///>  todo: allow 'unwrapping'
-    ///>  todo: add format checking
-    fn ApplyMetadata(comptime T: type, name: []const u8) type {
-        comptime {
-            // deconstruct T
-            const info = switch (@typeInfo(T)) {
-                .@"struct" => |sinfo| sinfo,
-                else => @compileError("Error, type " ++ @typeName(T) ++ " is not a type which can be composed!"),
-            };
-
-            // construct structure information reflecting the input
-            var destructed = util.deStruct(T).expand(1);
-            const i = @TypeOf(destructed).size - 1;
-            destructed.fieldAttributes[i] = .{};
-            destructed.fieldTypes[i] = void;
-            destructed.fieldNames[i] = name;
-
-            return @Struct(
-                info.layout,
-                info.backing_integer,
-                &destructed.fieldNames,
-                &destructed.fieldTypes,
-                &destructed.fieldAttributes,
-            );
-        }
-    }
-
-    /// # compose
-    ///
-    /// used to tag a type as a composition
-    ///> [!WARNING]
-    ///>  `Compose(T) != T` will always be true
-    ///>  Declarations are lost, on Compose(T)
-    ///>  Methods are lost on Compose(T)
-    ///
-    ///> [!NOTE]
-    ///>  [See also `Leaf`](#leaf)
-    ///>  TODO: allow 'unwrapping'
-    inline fn Compose(comptime T: type) type {
-        comptime {
-            if (fieldFlag(T) != .composed and fieldFlag(T) != .owned)
-                @compileError("Error type '" ++ @typeName(T) ++ " 'Already has metadata flag!")
-            else
-                return ApplyMetadata(T, formats.composed);
-        }
-    }
-
-    /// # leaf
-    ///
-    /// used to tag a type as a leaf
-    ///> [!WARNING]
-    ///>  `Leaf(T) != T` will always be true
-    ///>  Declarations are lost, on Leaf(T)
-    ///>  Methods are lost on Leaf(T)
-    ///
-    ///> [!NOTE]
-    ///>  [See also `Compose`](#compose)
-    ///>  TODO: allow 'unwrapping'
-    inline fn Leaf(comptime T: type) type {
-        if (fieldFlag(T) != .leaf and fieldFlag(T) != .owned)
-            @compileError("Error type '" ++ @typeName(T) ++ "'Already has metadata flag!");
-        return ApplyMetadata(T, formats.leaf);
-    }
-
-    /// # flatten
-    ///
-    /// Given a type T
-    /// flattens the fields of any substructure fields tagged as `flags.Flags.compose` into their parent, in which case Flatten(T) != T
-    /// Otherwise does nothing, in which case Flatten(T) == T
-    ///
-    ///> [!NOTE]
-    ///> **Intended for internal use only**
-    ///> [See also, `flags.Flags.compose`](#flags.Flags.compose)
-    ///
-    ///> [!WARNING]
-    ///>  `Flatten(T) != T` is dependent on whether or not it contains a composed field!
-    ///>  **Declarations are not guaranteed**!
-    ///>  **Methods are not guaranteed**!
-    fn Flatten(comptime T: type) type {
-        comptime {
-            const info = switch (@typeInfo(T)) {
-                .@"struct" => |i| i,
-                else => return T,
-            };
-
-            var addedFieldCount: comptime_int = 0;
-
-            for (info.fields) |field| {
-                const U = Flatten(field.type);
-                switch (fieldFlag(U)) {
-                    .composed => {
-                        addedFieldCount += @typeInfo(U).@"struct".fields.len - 1;
-                    },
-                    else => continue,
-                }
-            }
-
-            var newInfo = util.deStruct(T).expand(addedFieldCount);
-            var i: comptime_int = 0;
-
-            for (info.fields) |field| {
-                const U = Flatten(field.type);
-                switch (fieldFlag(U)) {
-                    .composed => {
-                        for (@typeInfo(U).@"struct".fields) |subField| {
-                            if (isFlagFormat(subField.name))
-                                continue;
-
-                            newInfo.fieldAttributes[i] = .{
-                                .default_value_ptr = subField.default_value_ptr,
-                                .@"comptime" = subField.is_comptime,
-                                .@"align" = subField.alignment,
-                            };
-                            newInfo.fieldNames[i] = subField.name;
-                            newInfo.fieldTypes[i] = subField.type;
-                            i += 1;
-                        }
-                    },
-                    else => {
-                        newInfo.fieldAttributes[i] = .{
-                            .default_value_ptr = field.default_value_ptr,
-                            .@"comptime" = field.is_comptime,
-                            .@"align" = field.alignment,
-                        };
-                        newInfo.fieldNames[i] = field.name;
-                        newInfo.fieldTypes[i] = field.type;
-                        i += 1;
-                    },
-                }
-            }
-            return newInfo.Construct();
-        }
-    }
-
-    /// # isFlag
-    ///
-    /// Returns whether or not str is one of the flag formats
-    ///
-    ///> [!NOTE]
-    ///> [See also flags](#flags)
-    fn isFlagFormat(str: []const u8) bool {
-        inline for (std.enums.values(std.meta.DeclEnum(formats))) |decl| {
-            if (std.mem.eql(u8, str, @field(formats, @tagName(decl))))
-                return true;
-        } else return false;
-    }
-};
-
-pub const Compose = flags.Compose;
-
-/// # own
-///
-/// used to tag a type as ownership (default behavior)
-/// can be omitted with no semantic differences
-/// `Own(T) == T`
-pub inline fn Own(comptime T: type) type {
-    return T;
-}
-
-/// #fieldFlag
-///
-/// Given type T
-/// Looks at fields for metadata
-/// If not `@typeInfo(T) == .@"struct"`
-/// returns .leaf
-pub fn fieldFlag(T: type) flags.Flags {
-    const info = switch (@typeInfo(T)) {
-        .@"struct" => |i| i,
-        else => return .leaf,
-    };
-    inline for (&.{ .leaf, .composed }) |flag| {
-        const flagMeta = @field(flags.formats, @tagName(flag));
-        for (info.fields) |field|
-            if (std.mem.eql(u8, flagMeta, field.name)) return flag;
-    } else return .owned;
-}
 
 /// `types` should be all the types the engine will utilize,
 /// `types` *will not* be infered by systems.
@@ -310,8 +141,11 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
     comptime {
         // create structure of arrays
         var valueTypes: [types.len]type = undefined;
-        for (types, 0..) |T, i|
-            valueTypes[i] = Array(T);
+        var flattenedTypes: [types.len]type = undefined;
+        for (types, 0..) |T, i| {
+            flattenedTypes[i] = flags.Flatten(T);
+            valueTypes[i] = Array(flattenedTypes[i]);
+        }
 
         for (requestedSystems) |System|
             std.debug.assert(system.qualifies(System));
@@ -330,12 +164,14 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     @field(data, std.fmt.comptimePrint("{d}", .{i})) = T.empty;
 
                 if (@import("builtin").mode == .Debug)
-                    inline for (allTypes) |T| {
+                    inline for (types) |T| {
+                        std.debug.print("Type {} qualifies for: ", .{T});
                         inline for (systems) |Sys| {
                             if (Sys.requirements.qualifies(T)) {
-                                std.log.debug("Type '{}' qualifies for system '{}'", .{ T, Sys });
+                                std.debug.print("{}, ", .{Sys});
                             }
                         }
+                        std.debug.print("\n", .{});
                     };
 
                 return .{
@@ -353,13 +189,27 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     self.data[i].deinit(self.info.gpa);
             }
 
+            /// # addValue
+            ///
+            /// Given the registry and a value of a type in the registry, adds the value
+            /// Returns a pointer to the type new value
+            ///
+            ///> [!NOTE]
+            ///> Pointer is owned by `self`
+            ///> Pointer may be invalidated between calls of `process`
+            ///
+            ///> [!WARNING]
+            ///> Returned pointer is not guaranteed to be the same type as `value`
+            ///> May cause runtime overhead if `@TypeOf(value) != flags.Flatten(@TypeOf(value))`
             pub fn addValue(self: *@This(), value: anytype) std.mem.Allocator.Error!void {
                 const T = @TypeOf(value);
+                const Flattened = flags.Flatten(T);
+                const toAdd = if (T != Flattened) flags.flatten(value) else value;
                 const i = comptime for (allTypes, 0..) |J, i| {
-                    if (T == J) break i;
+                    if (Flattened == J) break i;
                 } else @compileError("Error, type \"" ++ @typeName(T) ++ "\" is not in the Registry!");
 
-                try self.data[i].append(self.info.gpa, value);
+                try self.data[i].append(self.info.gpa, toAdd);
             }
 
             pub fn process(self: *@This(), delta: f32) !void {
@@ -367,21 +217,26 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 inline for (allTypes) |T| {
                     const arr = self.getArrayFromType(T);
                     inline for (systems) |Sys|
-                        if (Sys.requirements.qualifies(T))
-                            try Sys.process(T, arr, self.info);
+                        if (Sys.requirements.qualifies(T)) {
+                            const Named = @field(Sys, system.fields.signature.name).NamedType(T);
+                            try Sys.process(T, @as([]Named, @ptrCast(@alignCast(arr.items))), self.info);
+                        };
                 }
             }
 
-            fn getArrayFromType(self: *@This(), comptime T: type) *Array(T) {
+            fn getArrayFromType(self: *@This(), comptime TPrime: type) *Array(flags.Flatten(TPrime)) {
+                const T = flags.Flatten(TPrime);
                 const i = comptime for (allTypes, 0..) |J, i| {
-                    if (T == J) break i;
+                    if (T == J) {
+                        break i;
+                    }
                 } else @compileError("Error, type '" ++ @typeName(T) ++ "' is not in the Registry!");
                 return &self.data[i];
             }
 
             pub const systems: []const type = requestedSystems;
             pub const arrayTypes = valueTypes;
-            pub const allTypes = types;
+            pub const allTypes = flattenedTypes;
         };
     }
 }
