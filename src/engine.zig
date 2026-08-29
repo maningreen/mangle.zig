@@ -18,31 +18,63 @@ pub const RegistryInformation = struct {
 
 pub const system = struct {
     pub const Error = error{ProcessError} || std.mem.Allocator.Error;
-    /// Name and type of the function of the system
-    pub const function = struct {
-        const name = "process";
-        /// Should be read as
-        /// ```zig
-        /// fn (comptime T: type, _: []T, _: RegistryInformation) Error!void`
-        /// ```
-        pub const Type: type = fn (comptime type, anytype, RegistryInformation) Error!void;
-    };
 
-    /// Name and type of the signature of the system
-    pub const signature = struct {
-        pub const name = "requirements";
-        pub const Type = Signature;
+    pub const fields = struct {
+        /// Name and type of the function of the system
+        pub const function = struct {
+            const name = "process";
+            /// Should be read as
+            /// ```zig
+            /// fn (comptime T: type, _: []T, _: RegistryInformation) Error!void`
+            /// ```
+            pub const Type: type = fn (comptime type, anytype, RegistryInformation) Error!void;
+        };
+
+        /// Name and type of the signature of the system
+        pub const signature = struct {
+            pub const name = "requirements";
+            pub const Type = Signature;
+        };
+    };
+    pub const Signature = struct {
+        items: []const type,
+
+        /// returns a tuple
+        /// order is dependent on the items
+        pub inline fn GetType(self: Signature) type {
+            comptime return @Tuple(self.items);
+        }
+
+        /// returns whether or not a structure (if not structure returns whether or not is contained)
+        /// qualifies for the signature
+        /// maybe: provide recursion in structures for composition
+        pub inline fn qualifies(comptime self: Signature, comptime T: type) bool {
+            comptime {
+                switch (@typeInfo(flags.Flatten(T))) {
+                    .@"struct" => |tinfo| {
+                        return outer: for (self.items) |requirement| {
+                            for (tinfo.fields) |field| {
+                                if (requirement == field.type)
+                                    continue :outer;
+                            } else break false;
+                        } else true;
+                    },
+                    else => if (!std.mem.containsAtLeastScalar2(type, self, T, 1))
+                        return false,
+                }
+            }
+        }
     };
 
     pub fn qualifies(comptime System: type) bool {
         switch (@typeInfo(System)) {
             .@"struct" => |info| {
                 for (info.decls) |d| {
-                    if (std.mem.eql(u8, d.name, signature.name) and @TypeOf(@field(System, d.name)) == signature.Type)
+                    if (std.mem.eql(u8, d.name, fields.signature.name) and @TypeOf(@field(System, d.name)) == fields.signature.Type)
                         break;
                 } else return false;
                 for (info.decls) |d| {
-                    if (std.mem.eql(u8, d.name, function.name) and @TypeOf(@field(System, d.name)) == function.Type)
+                    if (std.mem.eql(u8, d.name, fields.function.name) and @TypeOf(@field(System, d.name)) == fields.function.Type)
                         break;
                 } else return false;
                 return true;
@@ -50,35 +82,20 @@ pub const system = struct {
             else => return false,
         }
     }
-};
 
-pub const Signature = struct {
-    items: []const type,
-
-    /// returns a tuple
-    /// order is dependent on the items
-    pub inline fn GetType(self: Signature) type {
-        comptime return @Tuple(self.items);
-    }
-
-    /// returns whether or not a structure (if not structure returns whether or not is contained)
-    /// qualifies for the signature
-    /// maybe: provide recursion in structures for composition
-    pub inline fn qualifies(comptime self: Signature, comptime T: type) bool {
-        comptime {
-            switch (@typeInfo(T)) {
-                .@"struct" => |tinfo| {
-                    return outer: for (self.items) |requirement| {
-                        for (tinfo.fields) |field| {
-                            if (requirement == field.type)
-                                continue :outer;
-                        } else break false;
-                    } else true;
-                },
-                else => if (!std.mem.containsAtLeastScalar2(type, self, T, 1))
-                    return false,
+    pub fn getFieldFromType(comptime T: type, instance: anytype) *T {
+        const U = @TypeOf(instance);
+        const info = switch (@typeInfo(U)) {
+            .@"struct" => |i| i,
+            else => @compileError("Error: type '" ++ @typeName(U) ++ "' is not a struct!"),
+        };
+        for (info.fields) |field| {
+            const V = field.type;
+            switch (@typeInfo(V)) {
+                .@"struct" => {},
+                else => if (V == T) return &@field(instance, field.name) else continue,
             }
-        }
+        } else @compileError("Error, type '" ++ @typeName(T) ++ "' is not in struct '" ++ @typeName(U) ++ "' as a leaf or owned!");
     }
 };
 
@@ -112,7 +129,7 @@ const flags = struct {
     ///>[!NOTE]
     ///>  todo: allow 'unwrapping'
     ///>  todo: add format checking
-    fn ApplyMetadata(comptime T: type, format: []const u8) type {
+    fn ApplyMetadata(comptime T: type, name: []const u8) type {
         comptime {
             // deconstruct T
             const info = switch (@typeInfo(T)) {
@@ -121,27 +138,19 @@ const flags = struct {
             };
 
             // construct structure information reflecting the input
-            var fieldNames: [info.fields.len + 1][]const u8 = undefined;
-            var fieldTypes: [info.fields.len + 1]type = undefined;
-            var fieldAttrs: [info.fields.len + 1]std.builtin.Type.StructField.Attributes = undefined;
-            fieldNames[0] = format;
-            fieldTypes[0] = void;
-            fieldAttrs[0] = .{
-                .default_value_ptr = null,
-                .@"align" = null,
-                .@"comptime" = false,
-            };
-            for (info.fields, 1..) |field, j| {
-                fieldNames[j] = field.name;
-                fieldTypes[j] = field.type;
-                fieldAttrs[j] = std.builtin.Type.StructField.Attributes{
-                    .default_value_ptr = field.default_value_ptr,
-                    .@"align" = field.alignment,
-                    .@"comptime" = field.is_comptime,
-                };
-            }
+            var destructed = util.deStruct(T).expand(1);
+            const i = @TypeOf(destructed).size - 1;
+            destructed.fieldAttributes[i] = .{};
+            destructed.fieldTypes[i] = void;
+            destructed.fieldNames[i] = name;
 
-            return @Struct(.auto, info.backing_integer, &fieldNames, &fieldTypes, &fieldAttrs);
+            return @Struct(
+                info.layout,
+                info.backing_integer,
+                &destructed.fieldNames,
+                &destructed.fieldTypes,
+                &destructed.fieldAttributes,
+            );
         }
     }
 
@@ -157,7 +166,12 @@ const flags = struct {
     ///>  [See also `Leaf`](#leaf)
     ///>  TODO: allow 'unwrapping'
     inline fn Compose(comptime T: type) type {
-        return ApplyMetadata(T, formats.composed);
+        comptime {
+            if (fieldFlag(T) != .composed and fieldFlag(T) != .owned)
+                @compileError("Error type '" ++ @typeName(T) ++ " 'Already has metadata flag!")
+            else
+                return ApplyMetadata(T, formats.composed);
+        }
     }
 
     /// # leaf
@@ -172,7 +186,92 @@ const flags = struct {
     ///>  [See also `Compose`](#compose)
     ///>  TODO: allow 'unwrapping'
     inline fn Leaf(comptime T: type) type {
+        if (fieldFlag(T) != .leaf and fieldFlag(T) != .owned)
+            @compileError("Error type '" ++ @typeName(T) ++ "'Already has metadata flag!");
         return ApplyMetadata(T, formats.leaf);
+    }
+
+    /// # flatten
+    ///
+    /// Given a type T
+    /// flattens the fields of any substructure fields tagged as `flags.Flags.compose` into their parent, in which case Flatten(T) != T
+    /// Otherwise does nothing, in which case Flatten(T) == T
+    ///
+    ///> [!NOTE]
+    ///> **Intended for internal use only**
+    ///> [See also, `flags.Flags.compose`](#flags.Flags.compose)
+    ///
+    ///> [!WARNING]
+    ///>  `Flatten(T) != T` is dependent on whether or not it contains a composed field!
+    ///>  **Declarations are not guaranteed**!
+    ///>  **Methods are not guaranteed**!
+    fn Flatten(comptime T: type) type {
+        comptime {
+            const info = switch (@typeInfo(T)) {
+                .@"struct" => |i| i,
+                else => return T,
+            };
+
+            var addedFieldCount: comptime_int = 0;
+
+            for (info.fields) |field| {
+                const U = Flatten(field.type);
+                switch (fieldFlag(U)) {
+                    .composed => {
+                        addedFieldCount += @typeInfo(U).@"struct".fields.len - 1;
+                    },
+                    else => continue,
+                }
+            }
+
+            var newInfo = util.deStruct(T).expand(addedFieldCount);
+            var i: comptime_int = 0;
+
+            for (info.fields) |field| {
+                const U = Flatten(field.type);
+                switch (fieldFlag(U)) {
+                    .composed => {
+                        for (@typeInfo(U).@"struct".fields) |subField| {
+                            if (isFlagFormat(subField.name))
+                                continue;
+
+                            newInfo.fieldAttributes[i] = .{
+                                .default_value_ptr = subField.default_value_ptr,
+                                .@"comptime" = subField.is_comptime,
+                                .@"align" = subField.alignment,
+                            };
+                            newInfo.fieldNames[i] = subField.name;
+                            newInfo.fieldTypes[i] = subField.type;
+                            i += 1;
+                        }
+                    },
+                    else => {
+                        newInfo.fieldAttributes[i] = .{
+                            .default_value_ptr = field.default_value_ptr,
+                            .@"comptime" = field.is_comptime,
+                            .@"align" = field.alignment,
+                        };
+                        newInfo.fieldNames[i] = field.name;
+                        newInfo.fieldTypes[i] = field.type;
+                        i += 1;
+                    },
+                }
+            }
+            return newInfo.Construct();
+        }
+    }
+
+    /// # isFlag
+    ///
+    /// Returns whether or not str is one of the flag formats
+    ///
+    ///> [!NOTE]
+    ///> [See also flags](#flags)
+    fn isFlagFormat(str: []const u8) bool {
+        inline for (std.enums.values(std.meta.DeclEnum(formats))) |decl| {
+            if (std.mem.eql(u8, str, @field(formats, @tagName(decl))))
+                return true;
+        } else return false;
     }
 };
 
@@ -187,10 +286,16 @@ pub inline fn Own(comptime T: type) type {
     return T;
 }
 
+/// #fieldFlag
+///
+/// Given type T
+/// Looks at fields for metadata
+/// If not `@typeInfo(T) == .@"struct"`
+/// returns .leaf
 pub fn fieldFlag(T: type) flags.Flags {
     const info = switch (@typeInfo(T)) {
         .@"struct" => |i| i,
-        else => @compileError("Error, type " ++ @typeName(T) ++ " is not a struct!"),
+        else => return .leaf,
     };
     inline for (&.{ .leaf, .composed }) |flag| {
         const flagMeta = @field(flags.formats, @tagName(flag));
@@ -223,6 +328,15 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 var data: DataType = undefined;
                 inline for (arrayTypes, 0..) |T, i|
                     @field(data, std.fmt.comptimePrint("{d}", .{i})) = T.empty;
+
+                if (@import("builtin").mode == .Debug)
+                    inline for (allTypes) |T| {
+                        inline for (systems) |Sys| {
+                            if (Sys.requirements.qualifies(T)) {
+                                std.log.debug("Type '{}' qualifies for system '{}'", .{ T, Sys });
+                            }
+                        }
+                    };
 
                 return .{
                     .data = data,
