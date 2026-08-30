@@ -1,71 +1,36 @@
 const std = @import("std");
 
-const systemFile: []const u8 = "systems.zig";
-const typeFile: []const u8 = "types.zig";
-
-const Library = union(enum) {
-    dependency: struct {
-        name: []const u8,
-        /// if not provided, defaults to `name` only
-        modules: ?[]const ModuleInfo = null,
-        /// if not provided, does not link
-        artifact: ?[]const u8 = null,
-    },
-    systemLibrary: []const u8,
-
-    const ModuleInfo = struct {
-        name: []const u8,
-        importAs: ?[]const u8 = null,
-    };
-};
-
-const dependencies: []const Library = &.{
-    .{ .systemLibrary = "X11" },
-    .{ .systemLibrary = "Xcursor" },
-    .{ .systemLibrary = "Xi" },
-    .{ .systemLibrary = "Xinerama" },
-    .{ .systemLibrary = "Xrandr" },
-    .{ .systemLibrary = "glfw" },
-    .{ .dependency = .{
-        .name = "raylib",
-    } },
-};
-
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const mainModule = b.addModule("main", .{
+    const mainModule = b.addModule("mangle", .{
         .optimize = optimize,
         .target = target,
-        .root_source_file = b.path("./src/main.zig"),
+        .root_source_file = b.path("./src/mangle.zig"),
     });
-    const exe = b.addExecutable(.{ .name = "fishtFighting", .root_module = mainModule, .linkage = .dynamic });
-    const install = b.addInstallArtifact(exe, .{});
-    _ = install;
 
-    const run = b.step("run", "runs the executable");
-    const runExe = b.addRunArtifact(exe);
-    run.dependOn(&runExe.step);
+    const lib = b.addLibrary(.{
+        .name = "mangle",
+        .root_module = mainModule,
+    });
+    _ = b.addInstallArtifact(lib, .{});
 
-    for (dependencies) |lib| {
-        switch (lib) {
-            .dependency => |depInfo| {
-                const dep = b.dependency(depInfo.name, .{
-                    .optimize = optimize,
-                    .target = target,
-                });
-                for (depInfo.modules orelse &.{Library.ModuleInfo{ .name = depInfo.name }}) |module|
-                    exe.root_module.addImport(module.importAs orelse module.name, dep.module(module.name));
-                if (depInfo.artifact) |artifact| {
-                    exe.root_module.linkLibrary(dep.artifact(artifact));
-                }
-            },
-            .systemLibrary => |sys| {
-                exe.root_module.linkSystemLibrary(sys, .{ .use_pkg_config = .no });
-            },
-        }
-    }
+    const tests = b.addTest(.{
+        .root_module = mainModule,
+    });
+    const runTests = b.addRunArtifact(tests);
+    const testStep = b.step("test", "Runs tests");
+    testStep.dependOn(&runTests.step);
+
+    const install_docs = b.addInstallDirectory(.{
+        .source_dir = lib.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+
+    const docs_step = b.step("docs", "Generate documentation");
+    docs_step.dependOn(&install_docs.step);
 }
 
 /// walks through a directory tree, compiles files names into a list (full path local to root)
