@@ -1,6 +1,3 @@
-//* This file manages the comptime components of the game engine
-//* see `runtime` for runtime effects
-
 const std = @import("std");
 const meta = std.meta;
 const util = @import("util.zig");
@@ -10,6 +7,7 @@ const engine = @This();
 pub const flags = @import("flags.zig");
 pub const Compose = flags.Compose;
 pub const Leaf = flags.Leaf;
+pub const Own = flags.Own;
 
 pub const Array = std.ArrayList;
 
@@ -158,7 +156,7 @@ pub const system = struct {
         if (!@field(Sys, fields.signature.name).qualifies(T)) return;
 
         const Named = @field(Sys, fields.signature.name).NamedType(T);
-        return @field(Sys, fields.function.name)(Named, @as([]Named, @ptrCast(@alignCast(arg))), regInfo);
+        try @field(Sys, fields.function.name)(Named, @as([]Named, @ptrCast(@alignCast(arg))), regInfo);
     }
 
     // Removed.
@@ -182,7 +180,9 @@ pub const system = struct {
 /// `types` should be all the types the engine will utilize,
 /// `types` *will not* be infered by systems.
 pub fn Registry(comptime types: []const type, comptime requestedSystems: []const type) type {
-    @setEvalBranchQuota(34000 * 2);
+    // we do a lot of comptime recursion (which is an issue to optimize)
+    // so we just set it to an arbitrary big number
+    @setEvalBranchQuota(69420);
     comptime {
         // create structure of arrays
         var valueTypes: [types.len]type = undefined;
