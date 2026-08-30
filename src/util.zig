@@ -172,7 +172,6 @@ pub fn ProjectionType(
                 const paddingSize = globalOffset - byteOffset;
                 byteOffset = globalOffset;
                 std.debug.assert(paddingSize >= 0);
-                paddingCount += 1;
                 byteOffset = globalOffset;
                 deconInfo.fieldAttributes[i] = .{ .@"align" = 1 };
                 deconInfo.fieldNames[i] = std.fmt.comptimePrint(paddingFormat, .{paddingCount});
@@ -209,7 +208,7 @@ pub fn ProjectionType(
 ///     sub: struct { i: i32 },
 ///     otherField: u32,
 /// };
-/// const cast: *ProjectionType(A, .b) = project(myA, .b);
+/// const cast: *ProjectionType(A, .sub) = project(myA, .sub);
 /// const accessedI = cast.i; // not myA.b.i
 /// // cannot access cast.otherField
 /// ```

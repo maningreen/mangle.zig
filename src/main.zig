@@ -61,7 +61,6 @@ pub fn main(init: std.process.Init) !void {
 
     while (!rl.windowShouldClose()) {
         rl.beginDrawing();
-        rl.clearBackground(.blank);
         try rt.process(rl.getFrameTime());
         rl.endDrawing();
     }

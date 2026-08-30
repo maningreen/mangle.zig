@@ -11,8 +11,8 @@ pub const requirements = system.Signature{
             .type = types.Position,
         },
         .{
-            .name = "dem",
-            .type = types.Dimensions,
+            .name = "grav",
+            .type = types.Gravity,
         },
     },
 };
@@ -21,6 +21,6 @@ pub fn process(comptime T: type, arr: []T, info: engine.RegistryInformation) sys
     _ = &.{
         info,
     };
-    for (arr) |rect| 
-        rl.drawRectangleV(rect.pos, rect.dem, .white);
+    for (arr) |obj| 
+        obj.pos.y -= 30;
 }
