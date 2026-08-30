@@ -1,9 +1,13 @@
 const std = @import("std");
 const Type = std.builtin.Type;
 
+test {
+    std.testing.refAllDecls(@This());
+}
+
 /// Given a type, say `std.mem.Allocator`
 /// return the basename of the type, in this case `Allocator`
-/// > [!WARNING]
+/// > **WARNING**:
 /// > May be ambiguous for nonunique names, when being unique matters, such as indexing use `@typeName()`
 pub fn getBaseName(comptime T: type) [:0]const u8 {
     comptime {
@@ -19,8 +23,8 @@ pub fn getBaseName(comptime T: type) [:0]const u8 {
 ///
 /// Count represents the amount of fields
 ///
-///> [!NOTE]
-///> Intended for use at comptime
+///> **NOTE**:
+///> - Intended for use at comptime
 ///> [See also, deStruct](#deStruct)
 pub fn DeStructInfo(count: comptime_int) type {
     return struct {
@@ -33,8 +37,8 @@ pub fn DeStructInfo(count: comptime_int) type {
         /// # expand
         ///
         /// Returns a new type of size `DeStructInfo(count).size + add`
-        ///> [!WARNING]
-        ///> New items are `= undefined`
+        ///> **WARNING**:
+        ///> - New items are `= undefined`
         pub fn expand(self: @This(), add: comptime_int) DeStructInfo(@This().size + add) {
             if (add < 0) @compileError("Error: add is < 0, cannot shrink!");
             var ret: DeStructInfo(@This().size + add) = undefined;
@@ -88,8 +92,8 @@ pub inline fn strEql(a: []const u8, b: []const u8) bool {
 ///
 ///goes through the fields and applies the `==` operator
 ///
-///> [!WARNING]
-///> does not (yet) cover pointers and substructure fields
+///> **WARNING**:
+///> - does not (yet) cover pointers and substructure fields
 pub inline fn structEql(a: anytype, b: @TypeOf(a)) bool {
     const T = @TypeOf(a);
     std.debug.assert(@typeInfo(T) == .@"struct");
@@ -116,11 +120,11 @@ pub inline fn structEql(a: anytype, b: @TypeOf(a)) bool {
 /// ```
 /// Note how you're accessing the substructure field from top level.
 ///
-///> [!NOTE]
-///> `ProjectionType(T, .field) != @fieldType(T, "field") and ProjectionType(T, .field) != T`
-///> To cast T -> ProjectionType(T) use [Project](#Project)
-///> Non-substructure fields are interpreted as garbage data, but not changed.
-///> Intended for internal use.
+///> **NOTE**:
+///> - `ProjectionType(T, .field) != @fieldType(T, "field") and ProjectionType(T, .field) != T`
+///> - To cast T -> ProjectionType(T) use [Project](#Project)
+///> - Non-substructure fields are interpreted as garbage data, but not changed.
+///> - Intended for internal use.
 pub fn ProjectionType(
     T: type,
     comptime target: std.meta.FieldEnum(T),
@@ -213,11 +217,11 @@ pub fn ProjectionType(
 /// // cannot access cast.otherField
 /// ```
 ///
-///> [!NOTE]
-///> To generate the type, see [ProjectionType](#ProjectionType)
-///> Pointer is owned by caller, and is to `*value`
-///> No runtime overhead
-///> Works on any pointer type
+///> **NOTE**:
+///> - To generate the type, see [ProjectionType](#ProjectionType)
+///> - Pointer is owned by caller, and is to `*value`
+///> - No runtime overhead
+///> - Works on any pointer type
 pub inline fn project(
     value: anytype,
     comptime target: std.meta.FieldEnum(@typeInfo(@TypeOf(value)).pointer.child),

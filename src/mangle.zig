@@ -1,6 +1,6 @@
 const std = @import("std");
 const meta = std.meta;
-const util = @import("util.zig");
+pub const util = @import("util.zig");
 const StructField = std.builtin.Type.StructField;
 const StructAttrs = std.builtin.Type.StructField.Attributes;
 const engine = @This();
@@ -8,6 +8,10 @@ pub const flags = @import("flags.zig");
 pub const Compose = flags.Compose;
 pub const Leaf = flags.Leaf;
 pub const Own = flags.Own;
+
+test {
+    std.testing.refAllDecls(@This());
+}
 
 pub const Array = std.ArrayList;
 
@@ -75,11 +79,11 @@ pub const system = struct {
         ///
         /// Returns the inputed structure with names according to the fields
         ///
-        ///> [!NOTE]
-        ///> `self.NamedType(T) != T` when `self.qualifies(T)` and `self.fields.len > 0`
-        ///> Flattens T. See [Flatten](#flatten)
-        ///> Asserts `self.qualifies(T)`
-        ///> Returns a memory equivilent type to T
+        ///> **NOTE**:
+        ///> - `self.NamedType(T) != T` when `self.qualifies(T)` and `self.fields.len > 0`
+        ///> - Flattens T. See [Flatten](#flatten)
+        ///> - Asserts `self.qualifies(T)`
+        ///> - Returns a memory equivilent type to T
         pub inline fn NamedType(comptime self: Signature, comptime T: type) type {
             comptime {
                 var info = util.deStruct(T);
@@ -155,8 +159,8 @@ pub const system = struct {
 
         if (!@field(Sys, fields.signature.name).qualifies(T)) return;
 
-        const Named = @field(Sys, fields.signature.name).NamedType(T);
-        try @field(Sys, fields.function.name)(Named, @as([]Named, @ptrCast(@alignCast(arg))), regInfo);
+        // const Named = @field(Sys, fields.signature.name).NamedType(T);
+        // try @field(Sys, fields.function.name)(Named, @as([]Named, @ptrCast(@alignCast(arg))), regInfo);
     }
 
     // Removed.
@@ -239,13 +243,13 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             /// Given the registry and a value of a type in the registry, adds the value
             /// Returns a pointer to the type new value
             ///
-            ///> [!NOTE]
-            ///> Pointer is owned by `self`
-            ///> Pointer may be invalidated between calls of `process`
+            ///> **NOTE**:
+            ///> - Pointer is owned by `self`
+            ///> - Pointer may be invalidated between calls of `process`
             ///
-            ///> [!WARNING]
-            ///> Returned pointer is not guaranteed to be the same type as `value`
-            ///> May cause runtime overhead if `@TypeOf(value) != flags.Flatten(@TypeOf(value))`
+            ///> **WARNING**:
+            ///> - Returned pointer is not guaranteed to be the same type as `value`
+            ///> - May cause runtime overhead if `@TypeOf(value) != flags.Flatten(@TypeOf(value))`
             pub fn addValue(self: *@This(), value: anytype) std.mem.Allocator.Error!void {
                 const T = @TypeOf(value);
                 const Flattened = flags.Flatten(T);

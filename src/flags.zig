@@ -1,6 +1,10 @@
 const std = @import("std");
 const util = @import("util.zig");
 
+test {
+    std.testing.refAllDecls(@This());
+}
+
 const formats = struct {
     const composed = "__internal_registry_composed_flag__";
     const leaf = "__internal_registry_leaf_flag__";
@@ -24,14 +28,14 @@ pub const Flags = enum {
 
 /// used to tag a type with a metadata tag
 /// metadata *must* contain no formatting
-///> [!WARNING]
-///>  `ApplyMetadata(T) != T` will always be true
-///>  Declarations are lost, on ApplyMetadata(T)
-///>  Methods are lost on ApplyMetadata(T)
+///> **WARNING**:
+///> -  `ApplyMetadata(T) != T` will always be true
+///> -  Declarations are lost, on ApplyMetadata(T)
+///> -  Methods are lost on ApplyMetadata(T)
 ///
-///>[!TODO]
-///>  - [ ] allow 'unwrapping'
-///>  - [ ] add format checking
+///>**TODO**:
+///> -  - [ ] allow 'unwrapping'
+///> -  - [ ] add format checking
 pub fn ApplyMetadata(comptime T: type, name: []const u8) type {
     comptime {
         // deconstruct T
@@ -61,15 +65,15 @@ pub fn ApplyMetadata(comptime T: type, name: []const u8) type {
 ///
 /// Used to tag a type as a composition rather than ownership
 ///
-///> [!NOTE]
-///>  [See also `Leaf`](#leaf)
-///>  TODO: allow 'unwrapping'
-///>  `Compose(T)` Will always contain the same memory layout as `T`
+///> **NOTE**:
+///> -  [See also `Leaf`](#leaf)
+///> -  TODO: allow 'unwrapping'
+///> -  `Compose(T)` Will always contain the same memory layout as `T`
 ///
-///> [!WARNING]
-///>  `Compose(T) != T` will always be true
-///>  Declarations are lost, on Compose(T)
-///>  Methods are lost on Compose(T)
+///> **WARNING**:
+///> -  `Compose(T) != T` will always be true
+///> -  Declarations are lost, on Compose(T)
+///> -  Methods are lost on Compose(T)
 pub inline fn Compose(comptime T: type) type {
     comptime {
         if (fieldFlag(T) != .owned)
@@ -82,14 +86,14 @@ pub inline fn Compose(comptime T: type) type {
 /// # leaf
 ///
 /// used to tag a type as a leaf
-///> [!WARNING]
-///>  `Leaf(T) != T` will always be true
-///>  Declarations are lost, on Leaf(T)
-///>  Methods are lost on Leaf(T)
+///> **WARNING**:
+///> -  `Leaf(T) != T` will always be true
+///> -  Declarations are lost, on Leaf(T)
+///> -  Methods are lost on Leaf(T)
 ///
-///> [!NOTE]
-///>  [See also `Compose`](#compose)
-///>  TODO: allow 'unwrapping'
+///> **NOTE**:
+///> -  [See also `Compose`](#compose)
+///> -  TODO: allow 'unwrapping'
 pub inline fn Leaf(comptime T: type) type {
     comptime {
         if (fieldFlag(T) != .leaf and fieldFlag(T) != .owned)
@@ -102,10 +106,10 @@ pub inline fn Leaf(comptime T: type) type {
 ///
 /// used to tag a type as ownership (default behavior)
 ///
-///> [!NOTE]
-///> can be omitted with no semantic differences
-///> Intended for explicit ownership for readability
-///> `Own(T) == T`
+///> **NOTE**:
+///> - can be omitted with no semantic differences
+///> - Intended for explicit ownership for readability
+///> - `Own(T) == T`
 pub inline fn Own(comptime T: type) type {
     comptime {
         return T;
@@ -118,14 +122,14 @@ pub inline fn Own(comptime T: type) type {
 /// flattens the fields of any substructure fields tagged as `flags.Flags.compose` into their parent, in which case `Flatten(T) != T`
 /// Otherwise does nothing, in which case `Flatten(T) == T`
 ///
-///> [!WARNING]
-///>  `Flatten(T) != T` is dependent on whether or not it contains a composed field!
-///>  **Declarations are not guaranteed**
-///>  **Methods are not guaranteed**
-///>  **Does not guarantee a memory equivilent struct when flattened**
+///> **WARNING**:
+///> -  `Flatten(T) != T` is dependent on whether or not it contains a composed field!
+///> -  **Declarations are not guaranteed**
+///> -  **Methods are not guaranteed**
+///> -  **Does not guarantee a memory equivilent struct when flattened**
 ///
-///> [!NOTE]
-///> `Flatten(T) == Flatten(T)` will always be true
+///> **NOTE**:
+///> - `Flatten(T) == Flatten(T)` will always be true
 ///> [See also, `flags.Flags.compose`](#flags.Flags.compose)
 ///> [See also, `flags.flatten`](#flags.flatten) for a value cast
 pub fn Flatten(comptime T: type) type {
@@ -199,13 +203,13 @@ pub fn isFlattened(comptime T: type) bool {
 ///
 /// Given a runtime structure instance, returns a flattened version
 ///
-///> [!NOTE]
+///> **NOTE**:
 ///> [See also, flags.Flatten](#flags.Flatten) for type generation
-///> supposed to be equivilent to individually setting fields
+///> - supposed to be equivilent to individually setting fields
 ///
-///> [!WARNING]
-///> `@as(Flatten(@TypeOf(value)), @ptrCast(@alignCast(&value)))` is not guaranteed to work
-///> as `Flatten(T)` doesn't guarantee a memory equivilent type
+///> **WARNING**:
+///> - `@as(Flatten(@TypeOf(value)), @ptrCast(@alignCast(&value)))` is not guaranteed to work
+///> - as `Flatten(T)` doesn't guarantee a memory equivilent type
 pub fn flatten(value: anytype) Flatten(@TypeOf(value)) {
     const T = @TypeOf(value);
     const Flattened = Flatten(T);
@@ -258,7 +262,7 @@ pub fn flatten(value: anytype) Flatten(@TypeOf(value)) {
 ///
 /// Returns whether or not str is one of the flag formats
 ///
-///> [!NOTE]
+///> **NOTE**:
 ///> [See also flags](#flags)
 pub fn isFlagFormat(str: []const u8) bool {
     inline for (std.enums.values(std.meta.DeclEnum(formats))) |decl| {
