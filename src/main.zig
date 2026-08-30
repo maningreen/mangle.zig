@@ -56,6 +56,9 @@ pub fn main(init: std.process.Init) !void {
 
     rl.setTargetFPS(30);
 
+    std.log.debug("grav: {d}", .{@sizeOf(@import("types/gravRectangle.zig"))});
+    std.log.debug("rect: {d}", .{@sizeOf(@import("types/rectangle.zig"))});
+
     while (!rl.windowShouldClose()) {
         rl.beginDrawing();
         rl.clearBackground(.blank);
