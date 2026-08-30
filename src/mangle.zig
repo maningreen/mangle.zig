@@ -162,23 +162,6 @@ pub const system = struct {
         // const Named = @field(Sys, fields.signature.name).NamedType(T);
         // try @field(Sys, fields.function.name)(Named, @as([]Named, @ptrCast(@alignCast(arg))), regInfo);
     }
-
-    // Removed.
-    //
-    // pub fn getFieldFromType(comptime T: type, instance: anytype) *T {
-    // const U = @TypeOf(instance);
-    // const info = switch (@typeInfo(U)) {
-    // .@"struct" => |i| i,
-    // else => @compileError("Error: type '" ++ @typeName(U) ++ "' is not a struct!"),
-    // };
-    // for (info.fields) |field| {
-    // const V = field.type;
-    // switch (@typeInfo(V)) {
-    // .@"struct" => {},
-    // else => if (V == T) return &@field(instance, field.name) else continue,
-    // }
-    // } else @compileError("Error, type '" ++ @typeName(T) ++ "' is not in struct '" ++ @typeName(U) ++ "' as a leaf or owned!");
-    // }
 };
 
 /// `types` should be all the types the engine will utilize,
