@@ -1,4 +1,4 @@
-const engine = @import("engine.zig");
+const mangle = @import("engine.zig");
 const std = @import("std");
 
 pub const systems: []const type = &.{
