@@ -121,6 +121,46 @@ pub const system = struct {
         }
     }
 
+    pub inline fn processWrapper(
+        comptime Sys: type,
+        comptime T: type,
+        arg: []T,
+        regInfo: RegistryInformation,
+    ) Error!void {
+        // if (!@field(Sys, fields.signature.name).qualifies(T)) return;
+
+        const info = switch (@typeInfo(T)) {
+            .@"struct" => |i| i,
+            else => @compileError("Error: Type '" ++ @typeName(T) ++ "' is not a struct!"),
+        };
+
+        inline for (info.fields) |field| {
+            switch (@typeInfo(field.type)) {
+                .@"struct" => {
+                    switch (flags.fieldFlag(field.type)) {
+                        .owned => {
+                            comptime if (@typeInfo(field.type) != .@"struct") continue;
+                            try processWrapper(
+                                Sys,
+                                util.ProjectionType(T, util.strToTagComptime(field.name, std.meta.FieldEnum(T)).?),
+                                util.project(arg, util.strToTagComptime(field.name, std.meta.FieldEnum(T)).?),
+                                regInfo,
+                            );
+                        },
+                        .leaf => continue,
+                        else => unreachable,
+                    }
+                },
+                else => continue,
+            }
+        }
+
+        if (!@field(Sys, fields.signature.name).qualifies(T)) return;
+
+        const Named = @field(Sys, fields.signature.name).NamedType(T);
+        return @field(Sys, fields.function.name)(Named, @as([]Named, @ptrCast(@alignCast(arg))), regInfo);
+    }
+
     // Removed.
     //
     // pub fn getFieldFromType(comptime T: type, instance: anytype) *T {
@@ -142,6 +182,7 @@ pub const system = struct {
 /// `types` should be all the types the engine will utilize,
 /// `types` *will not* be infered by systems.
 pub fn Registry(comptime types: []const type, comptime requestedSystems: []const type) type {
+    @setEvalBranchQuota(34000 * 2);
     comptime {
         // create structure of arrays
         var valueTypes: [types.len]type = undefined;
@@ -221,10 +262,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 inline for (allTypes) |T| {
                     const arr = self.getArrayFromType(T);
                     inline for (systems) |Sys|
-                        if (Sys.requirements.qualifies(T)) {
-                            const Named = @field(Sys, system.fields.signature.name).NamedType(T);
-                            try Sys.process(T, @as([]Named, @ptrCast(@alignCast(arr.items))), self.info);
-                        };
+                        try system.processWrapper(Sys, T, arr.items, self.info);
                 }
             }
 

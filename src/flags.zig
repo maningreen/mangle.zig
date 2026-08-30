@@ -17,9 +17,8 @@ pub const Flags = enum {
     /// flattens the field to top level for systems
     composed,
 
-    /// equivilent to a single value
-    /// fields are not recursed into
-    /// but can be processed by systems
+    /// processed as a non-recursive structure
+    /// can be used in qualification but *not* it's fields
     leaf,
 };
 
@@ -148,7 +147,6 @@ pub fn Flatten(comptime T: type) type {
             }
         }
 
-        @setEvalBranchQuota(10000);
         var newInfo = util.deStruct(T).expand(addedFieldCount);
         var i: comptime_int = 0;
 
@@ -183,6 +181,17 @@ pub fn Flatten(comptime T: type) type {
             }
         }
         return newInfo.Construct();
+    }
+}
+
+pub fn isFlattened(comptime T: type) bool {
+    switch (@typeInfo(T)) {
+        .@"struct" => |info| {
+            for (info.fields) |field| {
+                if (isFlagFormat(field) or !isFlattened(T)) return false;
+            } else return true;
+        },
+        else => true,
     }
 }
 
@@ -264,7 +273,7 @@ pub fn isFlagFormat(str: []const u8) bool {
 /// Looks at fields for metadata
 /// If not `@typeInfo(T) == .@"struct"`
 /// returns .leaf
-pub fn fieldFlag(T: type) Flags {
+pub inline fn fieldFlag(comptime T: type) Flags {
     comptime {
         const info = switch (@typeInfo(T)) {
             .@"struct" => |i| i,
