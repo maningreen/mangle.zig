@@ -14,7 +14,8 @@ pub fn build(b: *std.Build) void {
         .name = "mangle",
         .root_module = mainModule,
     });
-    _ = b.addInstallArtifact(lib, .{});
+    const installLib = b.addInstallArtifact(lib, .{ .dest_dir = .{ .override = .lib } });
+    b.getInstallStep().dependOn(&installLib.step);
 
     const tests = b.addTest(.{
         .root_module = mainModule,
@@ -31,33 +32,4 @@ pub fn build(b: *std.Build) void {
 
     const docs_step = b.step("docs", "Generate documentation");
     docs_step.dependOn(&install_docs.step);
-}
-
-/// walks through a directory tree, compiles files names into a list (full path local to root)
-pub fn compileFilesInDirectory(
-    io: std.Io,
-    dirName: []const u8,
-    gpa: std.mem.Allocator,
-) ![][]u8 {
-    const dir = try std.Io.Dir.openDir(std.Io.Dir.cwd(), io, dirName, .{ .iterate = true });
-
-    var count: u64 = 0;
-    {
-        var it = dir.iterate();
-        while (try it.next(io)) |_| {
-            count += 1;
-        }
-    }
-    var files = try std.ArrayList([]u8).initCapacity(gpa, count);
-    var it = dir.iterate();
-    while (try it.next(io)) |entry| {
-        switch (entry.kind) {
-            .directory => continue,
-            .file => {
-                files.appendAssumeCapacity(try std.mem.concat(gpa, u8, &.{entry.name}));
-            },
-            else => undefined,
-        }
-    }
-    return files.toOwnedSlice(gpa);
 }
