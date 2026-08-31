@@ -66,7 +66,7 @@ pub fn ApplyMetadata(comptime T: type, name: []const u8) type {
 /// Used to tag a type as a composition rather than ownership
 ///
 ///> **NOTE**:
-///> -  [See also `Leaf`](#leaf)
+///> -  [See also `Leaf`](#mangle.flags.Leaf)
 ///> -  TODO: allow 'unwrapping'
 ///> -  `Compose(T)` Will always contain the same memory layout as `T`
 ///
@@ -92,7 +92,7 @@ pub inline fn Compose(comptime T: type) type {
 ///> -  Methods are lost on Leaf(T)
 ///
 ///> **NOTE**:
-///> -  [See also `Compose`](#compose)
+///> -  [See also `Compose`](#mangle.flags.Compose)
 ///> -  TODO: allow 'unwrapping'
 pub inline fn Leaf(comptime T: type) type {
     comptime {
@@ -130,8 +130,8 @@ pub inline fn Own(comptime T: type) type {
 ///
 ///> **NOTE**:
 ///> - `Flatten(T) == Flatten(T)` will always be true
-///> [See also, `flags.Flags.compose`](#flags.Flags.compose)
-///> [See also, `flags.flatten`](#flags.flatten) for a value cast
+///> [See also, `flags.Flags.compose`](#mangle.flags.Flags.compose)
+///> [See also, `flags.flatten`](#mangle.flags.flatten) for a value cast
 pub fn Flatten(comptime T: type) type {
     comptime {
         const info = switch (@typeInfo(T)) {
@@ -204,7 +204,7 @@ pub fn isFlattened(comptime T: type) bool {
 /// Given a runtime structure instance, returns a flattened version
 ///
 ///> **NOTE**:
-///> [See also, flags.Flatten](#flags.Flatten) for type generation
+///> [See also, flags.Flatten](#mangle.flags.Flatten) for type generation
 ///> - supposed to be equivilent to individually setting fields
 ///
 ///> **WARNING**:
@@ -263,7 +263,7 @@ pub fn flatten(value: anytype) Flatten(@TypeOf(value)) {
 /// Returns whether or not str is one of the flag formats
 ///
 ///> **NOTE**:
-///> [See also flags](#flags)
+///> [See also flags](#mangle.flags.Flags)
 pub fn isFlagFormat(str: []const u8) bool {
     inline for (std.enums.values(std.meta.DeclEnum(formats))) |decl| {
         if (std.mem.eql(u8, str, @field(formats, @tagName(decl))))

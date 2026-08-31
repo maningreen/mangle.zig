@@ -19,13 +19,11 @@ pub fn getBaseName(comptime T: type) [:0]const u8 {
     }
 }
 
-/// # DeStructInfo
-///
 /// Count represents the amount of fields
 ///
 ///> **NOTE**:
 ///> - Intended for use at comptime
-///> [See also, deStruct](#deStruct)
+///> [See also, deStruct](#mangle.util.deStruct)
 pub fn DeStructInfo(count: comptime_int) type {
     return struct {
         pub const size = count;
@@ -34,8 +32,6 @@ pub fn DeStructInfo(count: comptime_int) type {
         fieldNames: [count][]const u8,
         fieldTypes: [count]type,
 
-        /// # expand
-        ///
         /// Returns a new type of size `DeStructInfo(count).size + add`
         ///> **WARNING**:
         ///> - New items are `= undefined`
@@ -49,19 +45,15 @@ pub fn DeStructInfo(count: comptime_int) type {
             return ret;
         }
 
-        ///# Construct
-        ///
         /// Constructs a struct with `@Struct` according to fields
-        /// [See also ConstructExtra](#ConstructExtra)
+        /// [See also ConstructExtra](#mangle.util.DeStructInfo.ConstructExtra)
         pub inline fn Construct(comptime self: @This()) type {
             return @Struct(.auto, null, &self.fieldNames, &self.fieldTypes, &self.fieldAttributes);
         }
 
-        ///# ConstructExtra
-        ///
         /// Constructs a struct with `@Struct` according to fields
         /// allows for extra options passed in
-        /// [See also ](#Construct)
+        /// [See also ](#mangle.Util.DeStructInfo.Construct)
         pub inline fn ConstructExtra(comptime self: @This(), layout: std.builtin.Type.ContainerLayout, backing: ?type) type {
             return @Struct(layout, backing, &self.fieldNames, &self.fieldTypes, &self.fieldAttributes);
         }
@@ -88,8 +80,6 @@ pub inline fn strEql(a: []const u8, b: []const u8) bool {
     return std.mem.eql(u8, a, b);
 }
 
-///# structEql
-///
 ///goes through the fields and applies the `==` operator
 ///
 ///> **WARNING**:
@@ -105,8 +95,6 @@ pub inline fn structEql(a: anytype, b: @TypeOf(a)) bool {
     return eql;
 }
 
-///# ProjectionType
-///
 /// Given a structure type and a substructure field, creates a memory equivalent mask structure to access child fields.
 /// Example:
 /// ```zig
@@ -122,7 +110,7 @@ pub inline fn structEql(a: anytype, b: @TypeOf(a)) bool {
 ///
 ///> **NOTE**:
 ///> - `ProjectionType(T, .field) != @fieldType(T, "field") and ProjectionType(T, .field) != T`
-///> - To cast T -> ProjectionType(T) use [Project](#Project)
+///> - To cast T -> ProjectionType(T) use [Project](#mangle.util.Project)
 ///> - Non-substructure fields are interpreted as garbage data, but not changed.
 ///> - Intended for internal use.
 pub fn ProjectionType(
@@ -203,8 +191,6 @@ pub fn ProjectionType(
     }
 }
 
-///# project
-///
 /// Given a structure and field tag, masks all other fields to access the substructure's fields with dot syntax from top level
 /// Example:
 /// ```zig
@@ -218,7 +204,7 @@ pub fn ProjectionType(
 /// ```
 ///
 ///> **NOTE**:
-///> - To generate the type, see [ProjectionType](#ProjectionType)
+///> - To generate the type, see [ProjectionType](#mangle.util.ProjectionType)
 ///> - Pointer is owned by caller, and is to `*value`
 ///> - No runtime overhead
 ///> - Works on any pointer type

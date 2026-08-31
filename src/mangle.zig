@@ -1,9 +1,9 @@
 const std = @import("std");
 const meta = std.meta;
-pub const util = @import("util.zig");
 const StructField = std.builtin.Type.StructField;
 const StructAttrs = std.builtin.Type.StructField.Attributes;
 const engine = @This();
+pub const util = @import("util.zig");
 pub const flags = @import("flags.zig");
 pub const Compose = flags.Compose;
 pub const Leaf = flags.Leaf;
@@ -75,13 +75,11 @@ pub const system = struct {
             }
         }
 
-        /// # NamedType
-        ///
         /// Returns the inputed structure with names according to the fields
         ///
         ///> **NOTE**:
         ///> - `self.NamedType(T) != T` when `self.qualifies(T)` and `self.fields.len > 0`
-        ///> - Flattens T. See [Flatten](#flatten)
+        ///> - Flattens T. See [Flatten](#mangle.flags.Flatten)
         ///> - Asserts `self.qualifies(T)`
         ///> - Returns a memory equivilent type to T
         pub inline fn NamedType(comptime self: Signature, comptime T: type) type {
@@ -101,8 +99,6 @@ pub const system = struct {
         }
     };
 
-    /// # qualifies
-    ///
     /// Checks whether the inputed system type qualifies according to `fields`
     pub fn qualifies(comptime System: type) bool {
         comptime {
@@ -221,8 +217,6 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     self.data[i].deinit(self.info.gpa);
             }
 
-            /// # addValue
-            ///
             /// Given the registry and a value of a type in the registry, adds the value
             /// Returns a pointer to the type new value
             ///
