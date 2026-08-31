@@ -3,7 +3,6 @@ const meta = std.meta;
 pub const util = @import("util.zig");
 const StructField = std.builtin.Type.StructField;
 const StructAttrs = std.builtin.Type.StructField.Attributes;
-const engine = @This();
 pub const flags = @import("flags.zig");
 pub const Compose = flags.Compose;
 pub const Leaf = flags.Leaf;
@@ -51,6 +50,7 @@ pub const system = struct {
 
             /// Used for systems to use dot syntax access
             /// Ignored in qualifications
+            /// See, also [NamedType](#mangled.system.Signature.NamedType)
             name: []const u8,
         };
 
@@ -59,7 +59,6 @@ pub const system = struct {
 
         /// returns whether or not a structure (if not structure returns whether or not is contained)
         /// qualifies for the signature
-        /// maybe: provide recursion in structures for composition
         pub inline fn qualifies(comptime self: Signature, comptime T: type) bool {
             comptime {
                 const info = switch (@typeInfo(flags.Flatten(T))) {
@@ -68,7 +67,7 @@ pub const system = struct {
                 };
                 outer: for (self.fields) |Requirement| {
                     for (info.fields) |field| {
-                        if (field.type == Requirement.type) continue :outer;
+                        if (field.type == Requirement.type or field.type == Leaf(Requirement.type)) continue :outer;
                     } else return false;
                 }
                 return true;
@@ -164,11 +163,11 @@ pub const system = struct {
     }
 };
 
-/// `types` should be all the types the engine will utilize,
+/// `types` should be all the types the registry will utilize,
 /// `types` *will not* be infered by systems.
 pub fn Registry(comptime types: []const type, comptime requestedSystems: []const type) type {
     // we do a lot of comptime recursion (which is an issue to optimize)
-    // so we just set it to an arbitrary big number
+    // so we just set it to an 'arbitrary' big number
     @setEvalBranchQuota(69420);
     comptime {
         // create structure of arrays
@@ -197,10 +196,10 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
 
                 if (@import("builtin").mode == .Debug)
                     inline for (types) |T| {
-                        std.debug.print("Type {} qualifies for: ", .{T});
+                        std.debug.print("Type '{}' qualifies for system(s): ", .{T});
                         inline for (systems) |Sys| {
                             if (Sys.requirements.qualifies(T)) {
-                                std.debug.print("{}, ", .{Sys});
+                                std.debug.print("'{}', ", .{Sys});
                             }
                         }
                         std.debug.print("\n", .{});

@@ -8,22 +8,28 @@ test {
 const formats = struct {
     const composed = "__internal_registry_composed_flag__";
     const leaf = "__internal_registry_leaf_flag__";
+    const dissolve = "__internal_registry_dissolve_flag__";
 };
 
 const voidValue: void = void{};
 
 /// Flags the engine uses internally
 pub const Flags = enum {
-    /// default for field structures
-    /// processed by systems
+    /// Default for field structures
+    /// Processed by systems
     owned,
 
-    /// flattens the field to top level for systems
+    /// Flattens the field to top level for systems
     composed,
 
-    /// processed as a non-recursive structure
-    /// can be used in qualification but *not* it's fields
+    /// Processed as a non-recursive structure
+    /// Can be used in qualification but *not* it's fields
     leaf,
+
+    /// Intended for wrapped data types
+    /// Used to differentiate types, similar to `leaf` in matching, and compose after
+    /// When dissolving, must have *one* field only
+    dissolve,
 };
 
 /// used to tag a type with a metadata tag
@@ -66,9 +72,9 @@ pub fn ApplyMetadata(comptime T: type, name: []const u8) type {
 /// Used to tag a type as a composition rather than ownership
 ///
 ///> **NOTE**:
-///> -  [See also `Leaf`](#leaf)
-///> -  TODO: allow 'unwrapping'
-///> -  `Compose(T)` Will always contain the same memory layout as `T`
+///> - [See also `Leaf`](#mangle.flags.Leaf)
+///> - TODO: allow 'unwrapping'
+///> - `Compose(T)` Will always contain the same memory layout as `T`
 ///
 ///> **WARNING**:
 ///> -  `Compose(T) != T` will always be true
@@ -83,8 +89,6 @@ pub inline fn Compose(comptime T: type) type {
     }
 }
 
-/// # leaf
-///
 /// used to tag a type as a leaf
 ///> **WARNING**:
 ///> -  `Leaf(T) != T` will always be true
@@ -92,18 +96,24 @@ pub inline fn Compose(comptime T: type) type {
 ///> -  Methods are lost on Leaf(T)
 ///
 ///> **NOTE**:
-///> -  [See also `Compose`](#compose)
+///> - `Leaf(T)` where `@typeInfo(T) != .@"struct"` is identity
+///> -  [See also `Compose`](#mangle.flags.Compose)
 ///> -  TODO: allow 'unwrapping'
 pub inline fn Leaf(comptime T: type) type {
     comptime {
-        if (fieldFlag(T) != .leaf and fieldFlag(T) != .owned)
-            @compileError("Error type '" ++ @typeName(T) ++ "'Already has metadata flag!");
-        return ApplyMetadata(T, formats.leaf);
+        switch (@typeInfo(T)) {
+            .@"struct" => {
+                if (fieldFlag(T) != .owned)
+                    @compileError("Error type '" ++ @typeName(T) ++ "'Already has metadata flag!");
+                return ApplyMetadata(T, formats.leaf);
+            },
+            else => {
+                if (@typeInfo(T) != .@"struct") return T;
+            },
+        }
     }
 }
 
-/// # own
-///
 /// used to tag a type as ownership (default behavior)
 ///
 ///> **NOTE**:
@@ -116,76 +126,73 @@ pub inline fn Own(comptime T: type) type {
     }
 }
 
-/// # flags.Flatten
-///
 /// Given a type T
-/// flattens the fields of any substructure fields tagged as `flags.Flags.compose` into their parent, in which case `Flatten(T) != T`
-/// Otherwise does nothing, in which case `Flatten(T) == T`
+/// flattens the fields of any substructure fields tagged as `flag` into their parent, in which case `Reduce(T) != T`
+/// Otherwise does nothing, in which case `Reduce(T) == T`
 ///
 ///> **WARNING**:
-///> -  `Flatten(T) != T` is dependent on whether or not it contains a composed field!
+///> -  `Reduce(T) != T` is dependent on whether or not it contains a composed field!
 ///> -  **Declarations are not guaranteed**
 ///> -  **Methods are not guaranteed**
-///> -  **Does not guarantee a memory equivilent struct when flattened**
 ///
 ///> **NOTE**:
-///> - `Flatten(T) == Flatten(T)` will always be true
-///> [See also, `flags.Flags.compose`](#flags.Flags.compose)
-///> [See also, `flags.flatten`](#flags.flatten) for a value cast
-pub fn Flatten(comptime T: type) type {
+///> - `Reduce(T) == Flatten(T)` will always be true
+///> -  Guarantees a memory equivilent struct when Reduceed
+///> - [See also, `flags.Flags.compose`](#mangle.flags.Flags.compose)
+///> - [See also, `flags.Reduce`](#mangle.flags.flatten) for a value cast
+///
+///> **TODO**:
+///> - Make name conflicts discarded in preference for higher level ones, and compileError otherwise
+pub fn Reduce(comptime T: type, comptime flag: Flags) type {
     comptime {
         const info = switch (@typeInfo(T)) {
             .@"struct" => |i| i,
-            else => return T,
+            else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
         };
-
-        var addedFieldCount: comptime_int = 0;
-
-        for (info.fields) |field| {
-            const U = Flatten(field.type);
-            switch (fieldFlag(U)) {
-                .composed => {
-                    addedFieldCount += @typeInfo(U).@"struct".fields.len - 1;
+        var composedFieldCount: comptime_int = info.fields.len;
+        for (info.fields) |value| {
+            switch (fieldFlag(value)) {
+                .compose => {
+                    // - 1 to account for flag
+                    composedFieldCount = @typeInfo(Reduce(value.type, flag)).@"struct".fields.len - 1;
                 },
                 else => continue,
             }
         }
-
-        var newInfo = util.deStruct(T).expand(addedFieldCount);
-        var i: comptime_int = 0;
-
-        for (info.fields) |field| {
-            const U = Flatten(field.type);
-            switch (fieldFlag(U)) {
-                .composed => {
-                    for (@typeInfo(U).@"struct".fields) |subField| {
-                        if (isFlagFormat(subField.name))
-                            continue;
-
-                        newInfo.fieldAttributes[i] = .{
-                            .default_value_ptr = subField.default_value_ptr,
-                            .@"comptime" = subField.is_comptime,
-                            .@"align" = subField.alignment,
-                        };
-                        newInfo.fieldNames[i] = subField.name;
-                        newInfo.fieldTypes[i] = subField.type;
-                        i += 1;
-                    }
-                },
-                else => {
-                    newInfo.fieldAttributes[i] = .{
-                        .default_value_ptr = field.default_value_ptr,
-                        .@"comptime" = field.is_comptime,
-                        .@"align" = field.alignment,
-                    };
-                    newInfo.fieldNames[i] = field.name;
-                    newInfo.fieldTypes[i] = field.type;
+        const dissolveFields: [composedFieldCount]std.meta.FieldEnum(T) = undefined;
+        var i = 0;
+        for (info.fields) |value| {
+            switch (fieldFlag(value)) {
+                .compose => {
+                    dissolveFields[i] = util.strToEnum(value.name);
                     i += 1;
                 },
+                else => continue,
             }
         }
-        return newInfo.Construct();
+        return util.Decompose(T, dissolveFields);
     }
+}
+
+/// Given a type T
+/// flattens the fields of any substructure fields tagged as [compose](#mangle.flags.Flags.compose) into their parent, in which case `Reduce(T) != T`
+/// Otherwise does nothing, in which case `Reduce(T) == T`
+///
+///> **WARNING**:
+///> -  `Reduce(T) != T` is dependent on whether or not it contains a composed field!
+///> -  **Declarations are not guaranteed**
+///> -  **Methods are not guaranteed**
+///
+///> **NOTE**:
+///> - `Reduce(T) == Flatten(T)` will always be true
+///> -  Guarantees a memory equivilent struct when Reduceed
+///> - [See also, `flags.Flags.compose`](#mangle.flags.Flags.compose)
+///> - [See also, `flags.Reduce`](#mangle.flags.flatten) for a value cast
+///
+///> **TODO**:
+///> - Make name conflicts discarded in preference for higher level ones, and compileError otherwise
+pub inline fn Flatten(comptime T: type) void {
+    return Reduce(T, .composed);
 }
 
 pub fn isFlattened(comptime T: type) bool {
@@ -199,63 +206,68 @@ pub fn isFlattened(comptime T: type) bool {
     }
 }
 
-/// # flags.flatten
+/// Given a runtime structure instance, returns a casted, flattened version
 ///
-/// Given a runtime structure instance, returns a flattened version
+/// Value must be a valid pointer type
 ///
 ///> **NOTE**:
-///> [See also, flags.Flatten](#flags.Flatten) for type generation
-///> - supposed to be equivilent to individually setting fields
+///> - [See also, flags.Flatten](#mangle.flags.Flatten) for type generation
+///> - Supposed to be equivilent to individually setting fields
+///> - Fields with duplicate name and type on different depths are discarded for lower depths
+///> - Pointer is owned by caller, and is to `value` as reinterpreted data
+pub inline fn flatten(value: anytype) util.PtrReinterpret(@TypeOf(value), Flatten(@TypeOf(value))) {
+    comptime {
+        std.debug.assert(@typeInfo(@TypeOf(value)) == .pointer);
+    }
+    return @ptrCast(value);
+}
+
+/// Given a type T
+/// flattens the fields of any substructure fields tagged as [compose](#mangle.flags.Flags.dissolve) into their parent, in which case `Reduce(T) != T`
+/// Otherwise does nothing, in which case `Reduce(T) == T`
 ///
 ///> **WARNING**:
-///> - `@as(Flatten(@TypeOf(value)), @ptrCast(@alignCast(&value)))` is not guaranteed to work
-///> - as `Flatten(T)` doesn't guarantee a memory equivilent type
-pub fn flatten(value: anytype) Flatten(@TypeOf(value)) {
-    const T = @TypeOf(value);
-    const Flattened = Flatten(T);
+///> -  `Reduce(T) != T` is dependent on whether or not it contains a composed field!
+///> -  **Declarations are not guaranteed**
+///> -  **Methods are not guaranteed**
+///
+///> **NOTE**:
+///> - `Reduce(T) == Flatten(T)` will always be true
+///> -  Guarantees a memory equivilent struct when Reduceed
+///> - [See also, `flags.Flags.compose`](#mangle.flags.Flags.compose)
+///> - [See also, `flags.Reduce`](#mangle.flags.flatten) for a value cast
+///
+///> **TODO**:
+///> - Make name conflicts discarded in preference for higher level ones, and compileError otherwise
+pub inline fn Dissolve(comptime T: type) void {
+    return Reduce(T, .composed);
+}
 
+pub fn isDissolved(comptime T: type) bool {
+    switch (@typeInfo(T)) {
+        .@"struct" => |info| {
+            for (info.fields) |field| {
+                if (isFlagFormat(field) or !isFlattened(T)) return false;
+            } else return true;
+        },
+        else => true,
+    }
+}
+
+/// Given a runtime structure instance, returns a casted, flattened version
+///
+/// Value must be a valid pointer type
+///
+///> **NOTE**:
+///> - [See also, flags.Dissolve](#mangle.flags.Dissolve) for type generation
+///> - Supposed to be equivilent to individually setting fields
+///> - Fields with duplicate name and type on different depths are discarded for lower depths
+///> - Pointer is owned by caller, and is to `value` as reinterpreted data
+pub inline fn dissolve(value: anytype) util.PtrReinterpret(@TypeOf(value), Dissolve(@TypeOf(value))) {
     comptime {
-        if (T == Flattened) return value;
+        std.debug.assert(@typeInfo(@TypeOf(value)) == .pointer);
     }
-
-    const tInfo = comptime util.deStruct(T);
-    const flattenedInfo = comptime util.deStruct(Flattened);
-
-    var out: Flattened = undefined;
-
-    inline for (
-        flattenedInfo.fieldNames,
-        flattenedInfo.fieldTypes,
-        flattenedInfo.fieldAttributes,
-    ) |targName, TargT, targAttr| {
-        inline for (
-            tInfo.fieldNames,
-            tInfo.fieldTypes,
-            tInfo.fieldAttributes,
-        ) |fromName, FromT, fromAttr| {
-            if (comptime (util.strEql(targName, fromName) and util.structEql(targAttr, fromAttr) and TargT == FromT))
-                @field(out, targName) = @field(value, fromName);
-
-            switch (comptime fieldFlag(FromT)) {
-                .composed => {
-                    const flattenedField = flatten(@field(value, fromName));
-                    const U = @TypeOf(flattenedField);
-                    const flattenedFieldInfo = comptime util.deStruct(U);
-                    inline for (
-                        flattenedFieldInfo.fieldNames,
-                        flattenedFieldInfo.fieldTypes,
-                        flattenedFieldInfo.fieldAttributes,
-                    ) |copyName, CopyT, copyAttr| {
-                        if (comptime (util.strEql(targName, copyName) and util.structEql(targAttr, copyAttr) and TargT == CopyT))
-                            @field(out, targName) = @field(flattenedField, copyName);
-                    }
-                },
-                else => {},
-            }
-        }
-    }
-
-    return out;
+    return @ptrCast(value);
 }
 
 /// # isFlag
