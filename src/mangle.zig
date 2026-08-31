@@ -74,13 +74,11 @@ pub const system = struct {
             }
         }
 
-        /// # NamedType
-        ///
         /// Returns the inputed structure with names according to the fields
         ///
         ///> **NOTE**:
         ///> - `self.NamedType(T) != T` when `self.qualifies(T)` and `self.fields.len > 0`
-        ///> - Flattens T. See [Flatten](#flatten)
+        ///> - Flattens T. See [Flatten](#mangle.flags.Flatten)
         ///> - Asserts `self.qualifies(T)`
         ///> - Returns a memory equivilent type to T
         pub inline fn NamedType(comptime self: Signature, comptime T: type) type {
@@ -100,8 +98,6 @@ pub const system = struct {
         }
     };
 
-    /// # qualifies
-    ///
     /// Checks whether the inputed system type qualifies according to `fields`
     pub fn qualifies(comptime System: type) bool {
         comptime {
@@ -158,8 +154,8 @@ pub const system = struct {
 
         if (!@field(Sys, fields.signature.name).qualifies(T)) return;
 
-        // const Named = @field(Sys, fields.signature.name).NamedType(T);
-        // try @field(Sys, fields.function.name)(Named, @as([]Named, @ptrCast(@alignCast(arg))), regInfo);
+        const Named = @field(Sys, fields.signature.name).NamedType(T);
+        try @field(Sys, fields.function.name)(Named, @as([]Named, @ptrCast(@alignCast(arg))), regInfo);
     }
 };
 
@@ -220,8 +216,6 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     self.data[i].deinit(self.info.gpa);
             }
 
-            /// # addValue
-            ///
             /// Given the registry and a value of a type in the registry, adds the value
             /// Returns a pointer to the type new value
             ///

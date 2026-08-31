@@ -14,6 +14,32 @@ pub fn build(b: *std.Build) void {
         .name = "mangle",
         .root_module = mainModule,
     });
+
+    const examples: []const []const u8 = &.{
+        "message",
+        "compose",
+    };
+
+    const exampleBuildStep = b.step("examples", "builds all examples");
+    const runExampleFmt = "run-{s}";
+    const runExampleDescFmt = "runs the {s} example";
+
+    inline for (examples) |example| {
+        const exe = addExample(b, example, .{
+            .optimize = optimize,
+            .target = target,
+            .mangle = lib,
+        });
+        const installExe = b.addInstallArtifact(exe, .{});
+        exampleBuildStep.dependOn(&installExe.step);
+        const runStep = b.step(
+            std.fmt.comptimePrint(runExampleFmt, .{example}),
+            std.fmt.comptimePrint(runExampleDescFmt, .{example}),
+        );
+        const runExe = b.addRunArtifact(exe);
+        runStep.dependOn(&runExe.step);
+    }
+
     const installLib = b.addInstallArtifact(lib, .{ .dest_dir = .{ .override = .lib } });
     b.getInstallStep().dependOn(&installLib.step);
 
@@ -32,4 +58,36 @@ pub fn build(b: *std.Build) void {
 
     const docs_step = b.step("docs", "Generate documentation");
     docs_step.dependOn(&install_docs.step);
+}
+
+fn addExample(
+    b: *std.Build,
+    exampleName: []const u8,
+    options: struct {
+        target: std.Build.ResolvedTarget,
+        optimize: std.builtin.OptimizeMode,
+        mangle: *std.Build.Step.Compile,
+    },
+) *std.Build.Step.Compile {
+    const exampleDirectory = "examples/";
+    const exampleMain = "main.zig";
+
+    const path = b.pathJoin(&.{ exampleDirectory, exampleName, exampleMain });
+    const main = b.path(path);
+    const module = b.createModule(.{
+        .optimize = options.optimize,
+        .target = options.target,
+        .root_source_file = main,
+        .imports = &.{
+            .{
+                .name = "mangle",
+                .module = options.mangle.root_module,
+            }
+        },
+    });
+
+    return b.addExecutable(.{
+        .name = exampleName,
+        .root_module = module,
+    });
 }

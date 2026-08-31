@@ -20,13 +20,11 @@ pub fn getBaseName(comptime T: type) [:0]const u8 {
     }
 }
 
-/// # DeStructInfo
-///
 /// Count represents the amount of fields
 ///
 ///> **NOTE**:
 ///> - Intended for use at comptime
-///> [See also, deStruct](#deStruct)
+///> [See also, deStruct](#mangle.util.deStruct)
 pub fn DeStructInfo(count: comptime_int) type {
     return struct {
         pub const size = count;
@@ -35,8 +33,6 @@ pub fn DeStructInfo(count: comptime_int) type {
         fieldNames: [count][]const u8,
         fieldTypes: [count]type,
 
-        /// # expand
-        ///
         /// Returns a new type of size `DeStructInfo(count).size + add`
         ///> **WARNING**:
         ///> - New items are `= undefined`
@@ -50,19 +46,15 @@ pub fn DeStructInfo(count: comptime_int) type {
             return ret;
         }
 
-        ///# Construct
-        ///
         /// Constructs a struct with `@Struct` according to fields
-        /// [See also ConstructExtra](#ConstructExtra)
+        /// [See also ConstructExtra](#mangle.util.DeStructInfo.ConstructExtra)
         pub inline fn Construct(comptime self: @This()) type {
             return @Struct(.auto, null, &self.fieldNames, &self.fieldTypes, &self.fieldAttributes);
         }
 
-        ///# ConstructExtra
-        ///
         /// Constructs a struct with `@Struct` according to fields
         /// allows for extra options passed in
-        /// [See also ](#Construct)
+        /// [See also ](#mangle.Util.DeStructInfo.Construct)
         pub inline fn ConstructExtra(comptime self: @This(), layout: std.builtin.Type.ContainerLayout, backing: ?type) type {
             return @Struct(layout, backing, &self.fieldNames, &self.fieldTypes, &self.fieldAttributes);
         }
@@ -164,8 +156,6 @@ pub inline fn strEql(a: []const u8, b: []const u8) bool {
     return std.mem.eql(u8, a, b);
 }
 
-///# structEql
-///
 ///goes through the fields and applies the `==` operator
 ///
 ///> **WARNING**:

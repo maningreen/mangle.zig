@@ -72,9 +72,9 @@ pub fn ApplyMetadata(comptime T: type, name: []const u8) type {
 /// Used to tag a type as a composition rather than ownership
 ///
 ///> **NOTE**:
-///> - [See also `Leaf`](#mangle.flags.Leaf)
-///> - TODO: allow 'unwrapping'
-///> - `Compose(T)` Will always contain the same memory layout as `T`
+///> -  [See also `Leaf`](#mangle.flags.Leaf)
+///> -  TODO: allow 'unwrapping'
+///> -  `Compose(T)` Will always contain the same memory layout as `T`
 ///
 ///> **WARNING**:
 ///> -  `Compose(T) != T` will always be true
@@ -225,7 +225,8 @@ pub inline fn flatten(value: anytype) util.PtrReinterpret(@TypeOf(value), Flatte
 /// Given a type T
 /// flattens the fields of any substructure fields tagged as [compose](#mangle.flags.Flags.dissolve) into their parent, in which case `Reduce(T) != T`
 /// Otherwise does nothing, in which case `Reduce(T) == T`
-///
+///> [See also, flags.Flatten](#mangle.flags.Flatten) for type generation
+///> - supposed to be equivilent to individually setting fields
 ///> **WARNING**:
 ///> -  `Reduce(T) != T` is dependent on whether or not it contains a composed field!
 ///> -  **Declarations are not guaranteed**
@@ -275,7 +276,7 @@ pub inline fn dissolve(value: anytype) util.PtrReinterpret(@TypeOf(value), Disso
 /// Returns whether or not str is one of the flag formats
 ///
 ///> **NOTE**:
-///> [See also flags](#flags)
+///> [See also flags](#mangle.flags.Flags)
 pub fn isFlagFormat(str: []const u8) bool {
     inline for (std.enums.values(std.meta.DeclEnum(formats))) |decl| {
         if (std.mem.eql(u8, str, @field(formats, @tagName(decl))))
