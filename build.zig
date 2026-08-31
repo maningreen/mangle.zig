@@ -16,7 +16,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const examples: []const []const u8 = &.{
-        "helloWorld",
+        "message",
     };
 
     const exampleBuildStep = b.step("examples", "builds all examples");
@@ -77,10 +77,13 @@ fn addExample(
         .optimize = options.optimize,
         .target = options.target,
         .root_source_file = main,
-        .imports = &.{},
+        .imports = &.{
+            .{
+                .name = "mangle",
+                .module = options.mangle.root_module,
+            }
+        },
     });
-
-    module.linkLibrary(options.mangle);
 
     return b.addExecutable(.{
         .name = exampleName,
