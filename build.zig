@@ -17,6 +17,7 @@ pub fn build(b: *std.Build) void {
 
     const examples: []const []const u8 = &.{
         "message",
+        "compose",
     };
 
     const exampleBuildStep = b.step("examples", "builds all examples");
