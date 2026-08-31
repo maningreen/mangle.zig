@@ -159,8 +159,8 @@ pub const system = struct {
 
         if (!@field(Sys, fields.signature.name).qualifies(T)) return;
 
-        // const Named = @field(Sys, fields.signature.name).NamedType(T);
-        // try @field(Sys, fields.function.name)(Named, @as([]Named, @ptrCast(@alignCast(arg))), regInfo);
+        const Named = @field(Sys, fields.signature.name).NamedType(T);
+        try @field(Sys, fields.function.name)(Named, @as([]Named, @ptrCast(@alignCast(arg))), regInfo);
     }
 };
 
