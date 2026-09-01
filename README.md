@@ -39,7 +39,7 @@ In order to run the process function in the system, do
 ```zig
 try registry.process(delta);
 ```
-
+And if you won't be using `delta`, it's fine to provide 0, it's mainly there for graphical applications.
 
 ### Creating a system
 
@@ -88,7 +88,7 @@ pub const MyType = struct {
 };
 ```
 
-There are also 3 different functions to define the relationship a structure and a sub-structure, affecting how systems qualify it.
+There are also 3 different functions to define the relationship a structure and a sub-structure, affecting how systems qualify it, called [flags](#flags)
     - `Leaf(T)`
     - `Compose(T)`
     - `Own(T)`
@@ -231,7 +231,8 @@ extern struct {
     _2: [8]u8, // anonymized []other_field
 }
 ```
-It's guaranteed that field will be in the same memory location as it is in `U` and `T`
+It's guaranteed that field will be in the same memory location as it is in `U` and `T` <br>
+Due to `Project()` being a more advanced function, it's not available in the direct `mangle` namespace, but rather in `mangle.utils` for advanced users
 
 #### Flatten
 
@@ -259,6 +260,12 @@ struct {
 ```
 A quirk of `Flatten(T)` is it doesn't ensure memory equivalence, therefore there's a runtime `flatten(t)` to cast to a flattened version.
 
+## Debug Info
+
+When `@import("builtin").mode == .Debug`, simple type information will be provided about types and the systems they qualify for.<br>
+When building for other optimizations, this is omited during comptime.<br>
+If there's a missing qualification or a qualification you don't want, please report an issue. <br>
+
 ## Documentation
 
-Documentation is hosted on Github pages. Generated via `zig`
+Documentation is hosted on Github pages, [here](https://maningreen.github.io/mangle.zig). Generated via `zig build docs`
