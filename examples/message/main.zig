@@ -2,11 +2,9 @@ const std = @import("std");
 const mangle = @import("mangle");
 const system = mangle.system;
 
-const Key = mangle.Alias(u8, "key");
-
 const Message = struct {
     string: []const u8,
-    key: Key,
+    key: u8,
 };
 
 const MessageSystem = struct {
@@ -18,7 +16,7 @@ const MessageSystem = struct {
             },
             .{
                 .name = "key",
-                .type = Key,
+                .type = u8,
             },
         },
     };
