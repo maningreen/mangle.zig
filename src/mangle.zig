@@ -7,6 +7,7 @@ pub const flags = @import("flags.zig");
 pub const Compose = flags.Compose;
 pub const Leaf = flags.Leaf;
 pub const Own = flags.Own;
+pub const Alias = flags.Alias;
 
 test {
     std.testing.refAllDecls(@This());
@@ -30,7 +31,7 @@ pub const system = struct {
             const name = "process";
             /// Should be read as
             /// ```zig
-            /// fn (comptime T: type, _: []T, _: RegistryInformation) Error!void`
+            /// fn (comptime T: type, _: T, _: RegistryInformation) Error!void`
             /// ```
             pub const Type: type = fn (comptime type, anytype, RegistryInformation) Error!void;
         };
@@ -67,7 +68,20 @@ pub const system = struct {
                 };
                 outer: for (self.fields) |Requirement| {
                     for (info.fields) |field| {
-                        if (field.type == Requirement.type or field.type == Leaf(Requirement.type)) continue :outer;
+                        switch (flags.fieldFlag(field.type)) {
+                            .composed => unreachable,
+                            else => {
+                                switch (flags.fieldFlag(Requirement.type)) {
+                                    .owned, .composed, .leaf => {
+                                        if (Requirement.type == field.type) continue :outer;
+                                    },
+                                    .dissolve => {
+                                        if (Requirement.type == field.type or @typeInfo(Requirement.type).@"struct".fields[0].type == field.type)
+                                            continue :outer;
+                                    },
+                                }
+                            },
+                        }
                     } else return false;
                 }
                 return true;
@@ -121,9 +135,10 @@ pub const system = struct {
     pub inline fn processWrapper(
         comptime Sys: type,
         comptime T: type,
-        arg: []T,
+        arg: *T,
         regInfo: RegistryInformation,
     ) Error!void {
+        @setEvalBranchQuota(69420);
         // if (!@field(Sys, fields.signature.name).qualifies(T)) return;
 
         const info = switch (@typeInfo(T)) {
@@ -139,12 +154,12 @@ pub const system = struct {
                             comptime if (@typeInfo(field.type) != .@"struct") continue;
                             try processWrapper(
                                 Sys,
-                                util.ProjectionType(T, util.strToTagComptime(field.name, std.meta.FieldEnum(T)).?),
-                                util.project(arg, util.strToTagComptime(field.name, std.meta.FieldEnum(T)).?),
+                                field.type,
+                                &@field(arg, field.name),
                                 regInfo,
                             );
                         },
-                        .leaf => continue,
+                        .leaf, .dissolve => continue,
                         else => unreachable,
                     }
                 },
@@ -154,8 +169,12 @@ pub const system = struct {
 
         if (!@field(Sys, fields.signature.name).qualifies(T)) return;
 
-        const Named = @field(Sys, fields.signature.name).NamedType(T);
-        try @field(Sys, fields.function.name)(Named, @as([]Named, @ptrCast(@alignCast(arg))), regInfo);
+        const Eroded = flags.Erode(T);
+        comptime {
+            std.debug.assert(util.layoutEql(T, Eroded));
+        }
+        const Named = @field(Sys, fields.signature.name).NamedType(Eroded);
+        try @field(Sys, fields.function.name)(Named, @as(*Named, @ptrCast(@alignCast(arg))), regInfo);
     }
 };
 
@@ -168,11 +187,8 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
     comptime {
         // create structure of arrays
         var valueTypes: [types.len]type = undefined;
-        var flattenedTypes: [types.len]type = undefined;
-        for (types, 0..) |T, i| {
-            flattenedTypes[i] = flags.Flatten(T);
-            valueTypes[i] = Array(flattenedTypes[i]);
-        }
+        for (types, 0..) |T, i|
+            valueTypes[i] = Array(T);
 
         for (requestedSystems) |System|
             std.debug.assert(system.qualifies(System));
@@ -228,13 +244,11 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             ///> - May cause runtime overhead if `@TypeOf(value) != flags.Flatten(@TypeOf(value))`
             pub fn addValue(self: *@This(), value: anytype) std.mem.Allocator.Error!void {
                 const T = @TypeOf(value);
-                const Flattened = flags.Flatten(T);
-                const toAdd = if (T != Flattened) flags.flatten(value) else value;
                 const i = comptime for (allTypes, 0..) |J, i| {
-                    if (Flattened == J) break i;
+                    if (T == J) break i;
                 } else @compileError("Error, type \"" ++ @typeName(T) ++ "\" is not in the Registry!");
 
-                try self.data[i].append(self.info.gpa, toAdd);
+                try self.data[i].append(self.info.gpa, value);
             }
 
             pub fn process(self: *@This(), delta: f32) !void {
@@ -242,23 +256,22 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 inline for (allTypes) |T| {
                     const arr = self.getArrayFromType(T);
                     inline for (systems) |Sys|
-                        try system.processWrapper(Sys, T, arr.items, self.info);
+                        for (arr.items) |*value|
+                            try system.processWrapper(Sys, T, value, self.info);
                 }
             }
 
-            fn getArrayFromType(self: *@This(), comptime TPrime: type) *Array(flags.Flatten(TPrime)) {
-                const T = flags.Flatten(TPrime);
+            fn getArrayFromType(self: *@This(), comptime T: type) *Array(T) {
                 const i = comptime for (allTypes, 0..) |J, i| {
-                    if (T == J) {
+                    if (T == J)
                         break i;
-                    }
                 } else @compileError("Error, type '" ++ @typeName(T) ++ "' is not in the Registry!");
                 return &self.data[i];
             }
 
             pub const systems: []const type = requestedSystems;
             pub const arrayTypes = valueTypes;
-            pub const allTypes = flattenedTypes;
+            pub const allTypes = types;
         };
     }
 }
