@@ -39,13 +39,13 @@ In order to run the process function in the system, do
 ```zig
 try registry.process(delta);
 ```
-
+And if you won't be using `delta`, it's fine to provide 0, it's mainly there for graphical applications.
 
 ### Creating a system
 
 In mangle, a system is a type with two declarations:
     - requirements (`mangle.system.signature`)
-    - process (`fn (comptime T: type, []T, mangle.RegistryInfo) system.Error!void`)
+    - process (`fn (comptime T: type, T, mangle.RegistryInfo) system.Error!void`)
 Any system missing either of these or without the correct type will result in a compile error.
 
 A system.signature defines the 'requirements' a structure in its fields in order to 'qualify' for a systems 'process'.
@@ -61,10 +61,8 @@ pub const requirements: system.Signature = system.Signature{
     },
 };
 
-pub fn process(comptime T: type, args: []T, info: system.RegistryInfo) system.Error!void {
-    for (args) |item| {
-        std.debug.print("{s}", .{ item.string });
-    }
+pub fn process(comptime T: type, item: T, info: system.RegistryInfo) system.Error!void {
+    std.debug.print("{s}", .{ item.string });
 }
 ```
 
@@ -88,10 +86,11 @@ pub const MyType = struct {
 };
 ```
 
-There are also 3 different functions to define the relationship a structure and a sub-structure, affecting how systems qualify it.
+There are also 4 different functions to define the relationship a structure and a sub-structure, affecting how systems qualify it, called [flags](#flags)
     - `Leaf(T)`
     - `Compose(T)`
     - `Own(T)`
+    - `Dissolve(T)`
 We go more in depth on them in [here](#Flags)
 A type 'qualifies' for a system if every type in `requirements` is provided as a field in the type.<br>
 If it doesn't match, it won't be processed by the system.
@@ -102,6 +101,7 @@ A flag is the term for the following functions:
     - [`Leaf(T)`](#leaft)
     - [`Compose(T)`](#composet)
     - [`Own(T)`](#ownt)
+    - [`Dissolve(T)`](#dissolvet)
 Each one defines the relationship of a type and sub-structure, altering how a systems qualify them.<br>
 Each flag (except [Own](#ownt)) is qualified with a hidden 'flag' field with size 0.
 
@@ -169,6 +169,52 @@ This means any system with a requirement `BType` will not be seen `sub`, where `
 Semantically, a `Leaf(T)` structure is opaque to systems, but can still be matched with. e.g. a system with requirement `B` will match with `Leaf(B)` and can edit the fields of `Leaf(B)`<br>
 Importantly, a system matching `B` can edit a `Leaf(B)` directly, but not qualify according to it's fields.
 
+#### Dissolve(T)
+
+`Dissolve(T)` mainly serves as a backend for `Alias(T)`.<br>
+The main reason this is so is because the following is true:
+```zig
+const T = u8;
+T == u8;
+```
+Which makes sense, but breaks aliases, as if you have a `Vector2` type aliased to both `Position` and `Velocity`, the signatures have no way of differentiating fields.
+Therefore, `Alias(T)` exists.
+
+First, `Dissolve(T)` <br>
+`Dissolve(T)` tells the registry 'there is a semantic difference between T and it's field, unwrap on process'<br>
+`Disolve(T)` requires `T` to be a struct of *one* field, if the condition is not satisfied, a compile error is emitted.<br>
+
+`Alias(T)` is the practical use case of `Dissolve(T)`, which is to say, for majority of cases `Alias(T)` will suffice. `Alias(T)` also takes in a string, so it's more like `Alias(T, s)`, regardless `s` is important in ensuring `Alias(T)` is unique.<br>
+It's recommended, for an alias like `const MyAlias = Alias(u64, "MyAlias")` to set the name as the name of the alias. Do note: `Alias(T, s) == Alias(T, s)` but `Alias(T, alt_str) != Alias(T, str)`
+A usage example is provided:
+```zig
+const Header = Alias([]u8, "Header"); // otherwise the same type
+const Body = Alias([]u8, "Body");
+const Footer = Alias([]u8, "Footer");
+
+const Message = struct {
+    header: Header,
+    body: Body,
+    footer: Footer,
+};
+
+const ReadMessage = struct {
+    pub const requirements: system.Signature = system.Signature{
+        .fields = &.{ 
+            .{
+                // will only ever match with Message.body
+                .type = Body,
+                .name = "body"
+            },
+    };
+
+    pub fn process(comptime T: type, item: T, info: system.RegistryInfo) system.Error!void {
+        std.debug.print("{s}", .{ item.body });
+    }
+}
+```
+The operation to apply `Dissolve(T)` is called `Erode(T)`. `Alias(T)` is provided in `mangle`, `Dissolve(T)` in `mangle.flags`
+
 ### Type-System Qualification
 
 Specifically, qualification matching depends entirely on the structure, fields and flags of those fields.
@@ -184,6 +230,10 @@ const C = struct {
     sub: Compose(T),
 };
 
+const D = struct {
+    sub: Dissolve(T),
+};
+
 const T = struct {
     item: u32,
 }
@@ -192,8 +242,9 @@ All of these are semantically different:
     - `Own(T)` will be processed independently
     - `Leaf(T)` will be processed with the top-level only
     - `Compose(T)` extracts sub's fields into the top-level
+    - `Dissolve(T)` extracts sub's fields into the top-level, after qualification
 
-The following system matches with: `A.sub` (independently), `C`, and `T`
+The following system matches with: `A.sub`, `C`, `D`, and `T`
 ```zig
 pub const requirements: system.Signature = system.Signature{
     .fields = &.{ 
@@ -204,34 +255,9 @@ pub const requirements: system.Signature = system.Signature{
     },
 };
 ```
-Meaning, the system's `process` function will get called on [`Project(A, .sub)`](#projection), `C`, and `T`
+Meaning, the system's `process` function will get called on `A.sub`, `C`, and `T`
 
-### Semantics of Flags
-
-#### Projection
-
-In this context, `Project(T, .field)` means to project the sub-structure `.field` onto the memory of `T`. This has similar effects to [flattening](#flatten), but importantly discards all other fields from `T`<br>
-In memory, this is what happens with the following example (disregarding footprint optimizations).
-```zig
-const T = struct {
-    field_a: []const u8,
-    u_field: U,
-    other_field: i64
-};
-const U = struct {
-    field: u32,
-}
-```
-
-Calling `Project(T, .u_field)` produces roughly following
-```zig
-extern struct {
-    _1: [16]u8 // anonymized []const u8,
-    field: u32,
-    _2: [8]u8, // anonymized []other_field
-}
-```
-It's guaranteed that field will be in the same memory location as it is in `U` and `T`
+### Memory Semantics of Flags
 
 #### Flatten
 
@@ -259,6 +285,17 @@ struct {
 ```
 A quirk of `Flatten(T)` is it doesn't ensure memory equivalence, therefore there's a runtime `flatten(t)` to cast to a flattened version.
 
+#### Erode
+
+Dissolve is very similar to [Flatten](#flatten) in most of it's logic, and semantics, in fact they use the exact same underlying functions.<br>
+The largest difference is `Erode(T)` operates on `.dissolve`, whiles `Flatten(T)` on `.compose`
+
+## Debug Info
+
+When `@import("builtin").mode == .Debug`, simple type information will be provided about types and the systems they qualify for.<br>
+When building for other optimizations, this is omited during comptime.<br>
+If there's a missing qualification or a qualification you don't want, please report an issue. <br>
+
 ## Documentation
 
-Documentation is hosted on Github pages. Generated via `zig`
+Documentation is hosted on Github pages, [here](https://maningreen.github.io/mangle.zig). Generated via `zig build docs`

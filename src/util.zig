@@ -1,9 +1,10 @@
 const std = @import("std");
-const Type = std.builtin.Type;
 
 test {
     std.testing.refAllDecls(@This());
 }
+
+const paddingFmt = "__explicit_padding_{d}__";
 
 /// Given a type, say `std.mem.Allocator`
 /// return the basename of the type, in this case `Allocator`
@@ -28,7 +29,7 @@ pub fn DeStructInfo(count: comptime_int) type {
     return struct {
         pub const size = count;
 
-        fieldAttributes: [count]Type.StructField.Attributes,
+        fieldAttributes: [count]std.builtin.Type.StructField.Attributes,
         fieldNames: [count][]const u8,
         fieldTypes: [count]type,
 
@@ -60,20 +61,64 @@ pub fn DeStructInfo(count: comptime_int) type {
     };
 }
 
-pub fn deStruct(comptime T: type) DeStructInfo(@typeInfo(T).@"struct".fields.len) {
-    const info = switch (@typeInfo(T)) {
-        .@"struct" => |i| i,
-        else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a structure!"),
-    };
-    var ret: DeStructInfo(info.fields.len) = undefined;
-    for (info.fields, 0..) |field, i| {
-        ret.fieldAttributes[i].@"align" = field.alignment;
-        ret.fieldAttributes[i].@"comptime" = field.is_comptime;
-        ret.fieldAttributes[i].default_value_ptr = field.default_value_ptr;
-        ret.fieldTypes[i] = field.type;
-        ret.fieldNames[i] = field.name;
+pub inline fn deStruct(comptime T: type) DeStructInfo(@typeInfo(T).@"struct".fields.len) {
+    comptime {
+        const info = switch (@typeInfo(T)) {
+            .@"struct" => |i| i,
+            else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a structure!"),
+        };
+        var ret: DeStructInfo(info.fields.len) = undefined;
+        for (info.fields, 0..) |field, i| {
+            ret.fieldAttributes[i].@"align" = field.alignment;
+            ret.fieldAttributes[i].@"comptime" = field.is_comptime;
+            ret.fieldAttributes[i].default_value_ptr = field.default_value_ptr;
+            ret.fieldTypes[i] = field.type;
+            ret.fieldNames[i] = field.name;
+        }
+        return ret;
     }
-    return ret;
+}
+
+/// Sorts DeStructInfo by memory offset.
+/// When constructing, it's recommended to use [ConstructExtra(.@"extern")](#mangle.util.DeStructInfo.ConstructExtra)
+///
+///> **NOTE**:
+///> - See also [deStruct](#mangle.util.deStruct)
+pub inline fn deStructLayout(comptime T: type) DeStructInfo(@typeInfo(T).@"struct".fields.len) {
+    comptime {
+        const info = switch (@typeInfo(T)) {
+            .@"struct" => |i| i,
+            else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a structure!"),
+        };
+        var fields: [info.fields.len]std.builtin.Type.StructField = undefined;
+        for (0..info.fields.len) |i|
+            fields[i] = info.fields[i];
+
+        std.mem.sortUnstable(
+            std.builtin.Type.StructField,
+            &fields,
+            void{},
+            (struct {
+                fn lessThan(_: void, a: std.builtin.Type.StructField, b: @TypeOf(a)) bool {
+                    return @offsetOf(T, a.name) < @offsetOf(T, b.name);
+                }
+            }).lessThan,
+        );
+
+        var ret: DeStructInfo(fields.len) = undefined;
+        var structI = 0;
+        for (info.fields, 0..) |field, i| {
+            ret.fieldAttributes[i].@"align" = field.alignment;
+            ret.fieldAttributes[i].@"comptime" = field.is_comptime;
+            ret.fieldAttributes[i].default_value_ptr = field.default_value_ptr;
+            ret.fieldTypes[i] = field.type;
+            ret.fieldNames[i] = field.name;
+
+            structI += @sizeOf(@FieldType(T, field.name));
+        }
+
+        return ret;
+    }
 }
 
 pub inline fn strEql(a: []const u8, b: []const u8) bool {
@@ -95,153 +140,204 @@ pub inline fn structEql(a: anytype, b: @TypeOf(a)) bool {
     return eql;
 }
 
-/// Given a structure type and a substructure field, creates a memory equivalent mask structure to access child fields.
-/// Example:
-/// ```zig
-/// const A = struct {
-///     sub: struct { i: i32 },
-///     otherField: u32,
-/// };
-/// const cast: *ProjectionType(A, .b) = @ptrCast(&myA);
-/// const accessedI = cast.i; // not myA.b.i
-/// // cannot access cast.otherField
-/// ```
-/// Note how you're accessing the substructure field from top level.
+/// Given a structure and fields, decomposes the structure boundaries between them, raising sub-fields
 ///
 ///> **NOTE**:
-///> - `ProjectionType(T, .field) != @fieldType(T, "field") and ProjectionType(T, .field) != T`
-///> - To cast T -> ProjectionType(T) use [Project](#mangle.util.Project)
-///> - Non-substructure fields are interpreted as garbage data, but not changed.
-///> - Intended for internal use.
-pub fn ProjectionType(
-    T: type,
-    comptime target: std.meta.FieldEnum(T),
-) type {
+///> - Does not account for name conflicts (sorry)
+///> - Does not create a memory equivalent.
+///
+///> **TODO**
+///> - fix: name conflicts
+///
+///> **COMPILE ERRORS**
+///> - targets[n] is not to a sub-structure field
+pub inline fn Decompose(comptime T: type, targets: []const std.meta.FieldEnum(T)) type {
     comptime {
-        const paddingFormat = "_{d}";
-        const U = @FieldType(T, @tagName(target));
-
-        std.debug.assert(@typeInfo(T) == .@"struct");
-        std.debug.assert(@typeInfo(U) == .@"struct");
-
-        const info = @typeInfo(U).@"struct";
-        var fields: [info.fields.len]std.builtin.Type.StructField = undefined;
-        for (0..info.fields.len) |i| {
-            fields[i] = info.fields[i];
+        if (targets.len == 0) return T;
+        const sortedInfo = deStructLayout(T);
+        var endFieldsCount = @TypeOf(sortedInfo).size;
+        for (targets) |target| {
+            const U = @FieldType(T, @tagName(target));
+            endFieldsCount += @TypeOf(deStructLayout(U)).size - 1;
         }
 
-        std.mem.sort(std.builtin.Type.StructField, &fields, void{}, (struct {
-            fn lessThan(_: void, a: std.builtin.Type.StructField, b: std.builtin.Type.StructField) bool {
-                return @offsetOf(U, a.name) < @offsetOf(U, b.name);
-            }
-        }).lessThan);
-
-        const baseOffset = @offsetOf(T, @tagName(target));
-        var byteOffset: comptime_int = 0;
-        var paddingCount: comptime_int = 0;
-        for (fields) |field| {
-            const globalOffset = baseOffset + @offsetOf(U, field.name);
-            if (globalOffset != byteOffset) {
-                paddingCount += 1;
-                byteOffset = globalOffset;
-            }
-            byteOffset += @sizeOf(field.type);
-        }
-        // account for trailing padding
-        if (byteOffset != @sizeOf(T)) {
-            paddingCount += 1;
-            byteOffset = @sizeOf(T);
-        }
-
-        var deconInfo: DeStructInfo(paddingCount + @typeInfo(U).@"struct".fields.len) = undefined;
-        byteOffset = 0;
-        paddingCount = 0;
+        var endInfo: DeStructInfo(endFieldsCount) = undefined;
+        var localTopLevel: [endFieldsCount]?std.meta.FieldEnum(T) = undefined;
         var i = 0;
-        for (fields) |field| {
-            const globalOffset = baseOffset + @offsetOf(U, field.name);
-            if (globalOffset != byteOffset) {
-                paddingCount += 1;
-                const paddingSize = globalOffset - byteOffset;
-                byteOffset = globalOffset;
-                std.debug.assert(paddingSize >= 0);
-                byteOffset = globalOffset;
-                deconInfo.fieldAttributes[i] = .{ .@"align" = 1 };
-                deconInfo.fieldNames[i] = std.fmt.comptimePrint(paddingFormat, .{paddingCount});
-                deconInfo.fieldTypes[i] = [paddingSize]u8;
-                i += 1;
+        for (sortedInfo.fieldAttributes, sortedInfo.fieldNames, sortedInfo.fieldTypes) |fromAttr, fromName, FromType| {
+            for (targets) |target| {
+                if (strEql(fromName, @tagName(target))) {
+                    const destructedFrom = deStructLayout(FromType);
+                    for (
+                        destructedFrom.fieldAttributes,
+                        destructedFrom.fieldNames,
+                        destructedFrom.fieldTypes,
+                    ) |subAttr, subName, SubType| {
+                        endInfo.fieldAttributes[i] = subAttr;
+                        endInfo.fieldNames[i] = subName;
+                        endInfo.fieldTypes[i] = SubType;
+                        localTopLevel[i] = target;
+                        i += 1;
+                    }
+                    continue;
+                } else {
+                    endInfo.fieldAttributes[i] = fromAttr;
+                    endInfo.fieldNames[i] = fromName;
+                    endInfo.fieldTypes[i] = FromType;
+                    localTopLevel[i] = null;
+                    i += 1;
+                }
             }
-            byteOffset += @sizeOf(field.type);
-            deconInfo.fieldAttributes[i].@"align" = field.alignment;
-            deconInfo.fieldAttributes[i].@"comptime" = field.is_comptime;
-            deconInfo.fieldAttributes[i].default_value_ptr = field.default_value_ptr;
-            deconInfo.fieldTypes[i] = field.type;
-            deconInfo.fieldNames[i] = field.name;
-            i += 1;
         }
-        // account for trailing padding
-        if (byteOffset != @sizeOf(T)) {
-            paddingCount += 1;
-            deconInfo.fieldAttributes[i] = .{};
-            deconInfo.fieldNames[i] = std.fmt.comptimePrint(paddingFormat, .{paddingCount});
-            deconInfo.fieldTypes[i] = [@sizeOf(T) - @offsetOf(T, @tagName(target)) - @sizeOf(U)]u8;
-            i += 1;
+        for (0..endFieldsCount) |j| {
+            for (j + 1..endFieldsCount) |k| {
+                if (strEql(endInfo.fieldNames[j], endInfo.fieldNames[k])) {
+                    if (localTopLevel[j]) |parent| {
+                        std.debug.assert(localTopLevel[k] == null);
+                        endInfo.fieldNames[j] = std.fmt.comptimePrint("{s}_{s}", .{ @tagName(parent), endInfo.fieldNames[j] });
+                    } else {
+                        std.debug.assert(localTopLevel[k] != null);
+                        endInfo.fieldNames[k] = std.fmt.comptimePrint("{s}_{s}", .{ @tagName(localTopLevel[k]), endInfo.fieldNames[k] });
+                    }
+                }
+            }
         }
-
-        return deconInfo.ConstructExtra(.@"extern", null);
+        return endInfo.Construct();
     }
 }
 
-/// Given a structure and field tag, masks all other fields to access the substructure's fields with dot syntax from top level
-/// Example:
-/// ```zig
-/// const A = struct {
-///     sub: struct { i: i32 },
-///     otherField: u32,
-/// };
-/// const cast: *ProjectionType(A, .sub) = project(myA, .sub);
-/// const accessedI = cast.i; // not myA.b.i
-/// // cannot access cast.otherField
-/// ```
+/// Given a value, returns a casted version to the decomposed value
 ///
 ///> **NOTE**:
-///> - To generate the type, see [ProjectionType](#mangle.util.ProjectionType)
-///> - Pointer is owned by caller, and is to `*value`
-///> - No runtime overhead
-///> - Works on any pointer type
-pub inline fn project(
+///> - runtime overhead
+///> - See also [Decompose](#mangle.util.Decompose)
+///> - See also [mask](#mangle.util.mask)
+pub inline fn decompose(
     value: anytype,
-    comptime target: std.meta.FieldEnum(@typeInfo(@TypeOf(value)).pointer.child),
-) ProjectPointerType(@TypeOf(value), target) {
-    @setEvalBranchQuota(34000 * 2);
-    comptime {
-        const info = @typeInfo(@TypeOf(value));
-        std.debug.assert(info == .pointer);
-        std.debug.assert(@typeInfo(info.pointer.child) == .@"struct");
+    comptime targets: []const std.meta.FieldEnum(@TypeOf(value)),
+) Decompose(@TypeOf(value), targets) {
+    const T = @TypeOf(value);
+    if (Decompose(T, targets) == T) return value;
+    const info = switch (@typeInfo(T)) {
+        .@"struct" => |i| i,
+        else => @compileError("Error: Type '" ++ @typeName(T) ++ "' is not a struct!"),
+    };
+    const Fields = std.meta.FieldEnum(T);
+
+    var ret: Decompose(T, targets) = undefined;
+
+    inline for (info.fields) |field| {
+        const contains = comptime std.mem.containsAtLeast(Fields, targets, 1, &.{std.meta.stringToEnum(Fields, field.name).?});
+        if (contains) {
+            const U = field.type;
+            const uInfo = switch (@typeInfo(U)) {
+                .@"struct" => |i| i,
+                else => @compileError("Error: field '" ++ field.name ++ "' is not a struct!"),
+            };
+            for (uInfo.fields) |subfield| {
+                const subName = std.fmt.comptimePrint("{s}_{s}", .{ field.name, subfield.name });
+                if (@hasField(T, subName)) {
+                    @field(ret, subName) = @field(@field(value, field.name), subfield.name);
+                } else {
+                    @field(ret, subfield.name) = @field(@field(value, field.name), subfield.name);
+                }
+            }
+        }
     }
-    const Projected = ProjectPointerType(@TypeOf(value), target);
-    return @as(Projected, @ptrCast(value));
 }
 
-pub inline fn ProjectPointerType(
-    comptime T: type,
-    comptime target: std.meta.FieldEnum(@typeInfo(T).pointer.child),
-) type {
-    return @Pointer(
-        @typeInfo(T).pointer.size,
-        .{
-            .@"align" = @typeInfo(T).pointer.alignment,
-            .@"addrspace" = @typeInfo(T).pointer.address_space,
-            .@"allowzero" = @typeInfo(T).pointer.is_allowzero,
-            .@"const" = @typeInfo(T).pointer.is_allowzero,
-            .@"volatile" = @typeInfo(T).pointer.is_volatile,
-        },
-        ProjectionType(@typeInfo(T).pointer.child, target),
-        null,
-    );
+/// Given a type T and fields, masks the requested fields into padding
+///
+///> **NOTE**:
+///> - Memory equivalence is guarunteed
+///> - No name conflicts will happen
+///> - See also, [mask](#mangle.util.mask) for a runtime version
+pub inline fn Mask(comptime T: type, targets: []const std.meta.FieldEnum(T)) type {
+    comptime {
+        var info = deStructLayout(T);
+
+        var i = 0;
+        var paddingI = 0;
+        outer: for (info.fieldAttributes, info.fieldNames, info.fieldTypes) |fromAttr, fromName, FromType| {
+            if (strEql(fromName, @tagName(targets))) {
+                info.fieldAttributes[i] = .{ .@"align" = 1, .is_comptime = false, .default_value_ptr = null };
+                info.fieldNames[i] = std.fmt.comptimePrint(paddingFmt, paddingI);
+                info.fieldTypes[i] = [@sizeOf(FromType)]u8;
+                paddingI += 1;
+                i += 1;
+                continue :outer;
+            }
+            i += 1;
+            info.fieldAttributes[i] = fromAttr;
+            info.fieldNames[i] = fromName;
+            info.fieldTypes[i] = FromType;
+        }
+        return info.Construct();
+    }
 }
 
-pub inline fn strToTagComptime(comptime str: []const u8, comptime E: type) ?E {
-    for (std.enums.values(E)) |value| {
-        if (strEql(str, @tagName(value))) return value;
-    } else return null;
+/// Given a pointer to a value, returns a pointer back casted as the masked value
+///
+///> **NOTE**:
+///> - Value *must* be a pointer type.
+///> - No runtime overhead
+///> - See also [decompose](#mangle.util.decompose)
+///> - See also [Mask](#mangle.util.Mask)
+pub inline fn mask(
+    value: anytype,
+    comptime targets: []const std.meta.FieldEnum(@TypeOf(value)),
+) PtrReinterpret(@TypeOf(value), Mask(@TypeOf(value), targets)) {
+    return @ptrCast(value);
+}
+
+/// Given a string, returns an enum literal
+pub inline fn strToEnum(comptime T: type, comptime str: []const u8) T {
+    comptime {
+        for (std.enums.values(T)) |tag| {
+            if (strEql(@tagName(tag), str))
+                return tag;
+        } else @compileError("Tag '" ++ str ++ "' does not exist in enums '" ++ @typeName(T) ++ "'");
+    }
+}
+
+/// Given an In pointer, is reinterpreted into an Element type,
+///> **NOTE**:
+///> - Asserts sizes and alignments are the same, otherwise a compile error will be emitted
+pub inline fn PtrReinterpret(comptime In: type, comptime Element: type) type {
+    comptime {
+        const inInfo = switch (@typeInfo(In)) {
+            .pointer => |i| i,
+            else => @compileError("Error: type '" ++ @typeName(In) ++ "' is not a pointer!"),
+        };
+        if (@alignOf(inInfo.child) != @alignOf(Element)) @compileError("Error: alignment of '" ++ @typeName(In) ++ "' and '" ++ @typeName(Element) ++ "' differ, cannot cast!");
+        if (@sizeOf(inInfo.child) != @sizeOf(Element)) @compileError("Error: size of '" ++ @typeName(In) ++ "' and '" ++ @typeName(Element) ++ "' differ, cannot cast!");
+        return @Pointer(
+            inInfo.size,
+            .{
+                .@"addrspace" = inInfo.address_space,
+                .@"align" = inInfo.alignment,
+                .@"allowzero" = inInfo.is_allowzero,
+                .@"const" = inInfo.is_const,
+                .@"volatile" = inInfo.is_volatile,
+            },
+            Element,
+            null,
+        );
+    }
+}
+
+/// Given type T and U, checks if the memory layout's the same.
+pub inline fn layoutEql(comptime T: type, comptime U: type) bool {
+    comptime {
+        // const sortedT = deStructLayout(T);
+        // const sortedU = deStructLayout(U);
+
+        return @sizeOf(T) == @sizeOf(U);
+
+        // for (sortedT.fieldNames, sortedU.fieldNames) |nameT, nameU| {
+            // @compileLog(std.fmt.comptimePrint("field '{s}' offset A {}, offset B {}", .{ @offsetOf(T, nameT), @offsetOf(U, nameU) }));
+            // if (@offsetOf(T, nameT) != @offsetOf(U, nameU) or @FieldType(T, nameT) != @FieldType(U, nameU))
+                // return false;
+        // } else return true;
+    }
 }
