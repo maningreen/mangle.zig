@@ -19,7 +19,7 @@ pub const Array = std.ArrayList;
 
 /// `types` should be all the types the registry will utilize,
 /// `types` *will not* be infered by systems.
-pub fn Registry(comptime types: []const type, comptime requestedSystems: []const type) type {
+pub fn Registry(comptime types: []const type, comptime requestedSystems: []const type, comptime ExtraInfo: ?type) type {
     // we do a lot of comptime recursion (which is an issue to optimize)
     // so we just set it to an 'arbitrary' big number
     @setEvalBranchQuota(69420);
@@ -40,7 +40,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             data: DataType,
             info: RegistryInformation,
 
-            pub fn init(io: std.Io, gpa: std.mem.Allocator) @This() {
+            pub fn init(io: std.Io, gpa: std.mem.Allocator, extra: if(ExtraInfo) |_| ExtraInfo else void) @This() {
                 var data: DataType = undefined;
                 inline for (arrayTypes, 0..) |T, i|
                     @field(data, std.fmt.comptimePrint("{d}", .{i})) = T.empty;
@@ -62,6 +62,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                         .gpa = gpa,
                         .io = io,
                         .delta = 0.0,
+                        .extra = extra
                     },
                 };
             }
@@ -107,6 +108,14 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 } else @compileError("Error, type '" ++ @typeName(T) ++ "' is not in the Registry!");
                 return &self.data[i];
             }
+
+            /// information provided to every system as the final argument.
+            pub const RegistryInformation = struct {
+                gpa: std.mem.Allocator,
+                io: std.Io,
+                delta: f32,
+                extra: (ExtraInfo orelse void),
+            };
 
             pub const systems: []const type = requestedSystems;
             pub const arrayTypes = valueTypes;
