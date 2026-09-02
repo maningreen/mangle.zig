@@ -48,7 +48,7 @@ pub fn DeStructInfo(count: comptime_int) type {
 
         /// Constructs a struct with `@Struct` according to fields
         /// [See also ConstructExtra](#mangle.util.DeStructInfo.ConstructExtra)
-        pub inline fn Construct(comptime self: @This()) type {
+        pub fn Construct(comptime self: @This()) type {
             return @Struct(.auto, null, &self.fieldNames, &self.fieldTypes, &self.fieldAttributes);
         }
 
@@ -90,6 +90,7 @@ pub inline fn deStructLayout(comptime T: type) DeStructInfo(@typeInfo(T).@"struc
             .@"struct" => |i| i,
             else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a structure!"),
         };
+
         var fields: [info.fields.len]std.builtin.Type.StructField = undefined;
         for (0..info.fields.len) |i|
             fields[i] = info.fields[i];
@@ -151,57 +152,59 @@ pub inline fn structEql(a: anytype, b: @TypeOf(a)) bool {
 ///
 ///> **COMPILE ERRORS**
 ///> - targets[n] is not to a sub-structure field
-pub inline fn Decompose(comptime T: type, targets: []const std.meta.FieldEnum(T)) type {
+pub inline fn Decompose(comptime T: type, comptime targets: []const std.meta.FieldEnum(T)) type {
     comptime {
         if (targets.len == 0) return T;
-        const sortedInfo = deStructLayout(T);
-        var endFieldsCount = @TypeOf(sortedInfo).size;
+        const initial = deStruct(T);
+        var endFieldsCount = @TypeOf(initial).size;
         for (targets) |target| {
             const U = @FieldType(T, @tagName(target));
-            endFieldsCount += @TypeOf(deStructLayout(U)).size - 1;
+            endFieldsCount += @typeInfo(U).@"struct".fields.len;
         }
 
         var endInfo: DeStructInfo(endFieldsCount) = undefined;
         var localTopLevel: [endFieldsCount]?std.meta.FieldEnum(T) = undefined;
         var i = 0;
-        for (sortedInfo.fieldAttributes, sortedInfo.fieldNames, sortedInfo.fieldTypes) |fromAttr, fromName, FromType| {
+        for (initial.fieldAttributes, initial.fieldNames, initial.fieldTypes) |fromAttr, fromName, FromType| {
             for (targets) |target| {
                 if (strEql(fromName, @tagName(target))) {
-                    const destructedFrom = deStructLayout(FromType);
-                    for (
-                        destructedFrom.fieldAttributes,
-                        destructedFrom.fieldNames,
-                        destructedFrom.fieldTypes,
-                    ) |subAttr, subName, SubType| {
-                        endInfo.fieldAttributes[i] = subAttr;
-                        endInfo.fieldNames[i] = subName;
-                        endInfo.fieldTypes[i] = SubType;
+                    for (@typeInfo(FromType).@"struct".fields) |field| {
+                        endInfo.fieldAttributes[i] = .{
+                            .default_value_ptr = field.default_value_ptr,
+                            .@"comptime" = field.is_comptime,
+                            .@"align" = field.alignment,
+                        };
+                        endInfo.fieldNames[i] = field.name;
+                        endInfo.fieldTypes[i] = field.type;
                         localTopLevel[i] = target;
                         i += 1;
                     }
-                    continue;
-                } else {
-                    endInfo.fieldAttributes[i] = fromAttr;
-                    endInfo.fieldNames[i] = fromName;
-                    endInfo.fieldTypes[i] = FromType;
-                    localTopLevel[i] = null;
-                    i += 1;
                 }
+            } else {
+                endInfo.fieldAttributes[i] = fromAttr;
+                endInfo.fieldNames[i] = fromName;
+                endInfo.fieldTypes[i] = FromType;
+                localTopLevel[i] = null;
+                i += 1;
             }
         }
-        for (0..endFieldsCount) |j| {
-            for (j + 1..endFieldsCount) |k| {
-                if (strEql(endInfo.fieldNames[j], endInfo.fieldNames[k])) {
-                    if (localTopLevel[j]) |parent| {
-                        std.debug.assert(localTopLevel[k] == null);
-                        endInfo.fieldNames[j] = std.fmt.comptimePrint("{s}_{s}", .{ @tagName(parent), endInfo.fieldNames[j] });
-                    } else {
-                        std.debug.assert(localTopLevel[k] != null);
-                        endInfo.fieldNames[k] = std.fmt.comptimePrint("{s}_{s}", .{ @tagName(localTopLevel[k]), endInfo.fieldNames[k] });
+
+        const collisionFormat = "{}_{s}";
+        for (endInfo.fieldNames[0 .. endInfo.fieldNames.len - 2], 0..) |aName, j| {
+            for (endInfo.fieldNames[j + 1 ..], j + 1..) |bName, k| {
+                std.debug.assert(k != j);
+                if (strEql(aName, bName)) {
+                    if (localTopLevel[j]) |aTop| {
+                        endInfo.fieldNames[j] = std.fmt.comptimePrint(collisionFormat, .{ aTop, aName });
+                    }
+                    // btop reference
+                    if (localTopLevel[k]) |bTop| {
+                        endInfo.fieldNames[k] = std.fmt.comptimePrint(collisionFormat, .{ bTop, bName });
                     }
                 }
             }
         }
+
         return endInfo.Construct();
     }
 }
@@ -211,7 +214,6 @@ pub inline fn Decompose(comptime T: type, targets: []const std.meta.FieldEnum(T)
 ///> **NOTE**:
 ///> - runtime overhead
 ///> - See also [Decompose](#mangle.util.Decompose)
-///> - See also [mask](#mangle.util.mask)
 pub inline fn decompose(
     value: anytype,
     comptime targets: []const std.meta.FieldEnum(@TypeOf(value)),
@@ -234,7 +236,7 @@ pub inline fn decompose(
                 .@"struct" => |i| i,
                 else => @compileError("Error: field '" ++ field.name ++ "' is not a struct!"),
             };
-            for (uInfo.fields) |subfield| {
+            inline for (uInfo.fields) |subfield| {
                 const subName = std.fmt.comptimePrint("{s}_{s}", .{ field.name, subfield.name });
                 if (@hasField(T, subName)) {
                     @field(ret, subName) = @field(@field(value, field.name), subfield.name);
@@ -244,50 +246,7 @@ pub inline fn decompose(
             }
         }
     }
-}
-
-/// Given a type T and fields, masks the requested fields into padding
-///
-///> **NOTE**:
-///> - Memory equivalence is guarunteed
-///> - No name conflicts will happen
-///> - See also, [mask](#mangle.util.mask) for a runtime version
-pub inline fn Mask(comptime T: type, targets: []const std.meta.FieldEnum(T)) type {
-    comptime {
-        var info = deStructLayout(T);
-
-        var i = 0;
-        var paddingI = 0;
-        outer: for (info.fieldAttributes, info.fieldNames, info.fieldTypes) |fromAttr, fromName, FromType| {
-            if (strEql(fromName, @tagName(targets))) {
-                info.fieldAttributes[i] = .{ .@"align" = 1, .is_comptime = false, .default_value_ptr = null };
-                info.fieldNames[i] = std.fmt.comptimePrint(paddingFmt, paddingI);
-                info.fieldTypes[i] = [@sizeOf(FromType)]u8;
-                paddingI += 1;
-                i += 1;
-                continue :outer;
-            }
-            i += 1;
-            info.fieldAttributes[i] = fromAttr;
-            info.fieldNames[i] = fromName;
-            info.fieldTypes[i] = FromType;
-        }
-        return info.Construct();
-    }
-}
-
-/// Given a pointer to a value, returns a pointer back casted as the masked value
-///
-///> **NOTE**:
-///> - Value *must* be a pointer type.
-///> - No runtime overhead
-///> - See also [decompose](#mangle.util.decompose)
-///> - See also [Mask](#mangle.util.Mask)
-pub inline fn mask(
-    value: anytype,
-    comptime targets: []const std.meta.FieldEnum(@TypeOf(value)),
-) PtrReinterpret(@TypeOf(value), Mask(@TypeOf(value), targets)) {
-    return @ptrCast(value);
+    return ret;
 }
 
 /// Given a string, returns an enum literal
@@ -329,15 +288,14 @@ pub inline fn PtrReinterpret(comptime In: type, comptime Element: type) type {
 /// Given type T and U, checks if the memory layout's the same.
 pub inline fn layoutEql(comptime T: type, comptime U: type) bool {
     comptime {
-        // const sortedT = deStructLayout(T);
-        // const sortedU = deStructLayout(U);
+        const sortedT = deStructLayout(T);
+        const sortedU = deStructLayout(U);
 
-        return @sizeOf(T) == @sizeOf(U);
+        if (@TypeOf(sortedT).size !=  @TypeOf(sortedU).size) return false;
 
-        // for (sortedT.fieldNames, sortedU.fieldNames) |nameT, nameU| {
-            // @compileLog(std.fmt.comptimePrint("field '{s}' offset A {}, offset B {}", .{ @offsetOf(T, nameT), @offsetOf(U, nameU) }));
-            // if (@offsetOf(T, nameT) != @offsetOf(U, nameU) or @FieldType(T, nameT) != @FieldType(U, nameU))
-                // return false;
-        // } else return true;
+        for (sortedT.fieldNames, sortedU.fieldNames) |nameT, nameU| {
+            if (@offsetOf(T, nameT) != @offsetOf(U, nameU) or @FieldType(T, nameT) != @FieldType(U, nameU))
+                return false;
+        } else return true;
     }
 }

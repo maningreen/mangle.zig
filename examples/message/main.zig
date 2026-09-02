@@ -38,7 +38,7 @@ pub fn main(init: std.process.Init) !void {
     defer reg.deinit();
 
     try reg.addValue(Message{
-        .key = .{ .key = 'e' },
+        .key = 'e',
         .string = "Enter 'e' to close\n",
     });
 

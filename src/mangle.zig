@@ -8,6 +8,7 @@ pub const Compose = flags.Compose;
 pub const Leaf = flags.Leaf;
 pub const Own = flags.Own;
 pub const Alias = flags.Alias;
+pub const alias = flags.alias;
 
 test {
     std.testing.refAllDecls(@This());
@@ -99,14 +100,29 @@ pub const system = struct {
             comptime {
                 var info = util.deStruct(T);
                 if (!self.qualifies(T)) @compileError("Error, type '" ++ @typeName(T) ++ "' does not qualify!");
-                field: for (self.fields) |field| {
-                    for (info.fieldTypes, 0..) |U, i| {
-                        if (U == field.type) {
-                            info.fieldNames[i] = field.name;
-                            continue :field;
+                field: for (self.fields, 0..) |field, i| {
+                    for (self.fields) |requirement| {
+                        if (requirement.type == field.type) {
+                            switch (flags.fieldFlag(requirement.type)) {
+                                .dissolve => {
+                                    // info.fieldNames[i] = requirement.name;
+                                    info.fieldTypes[i] = flags.AliasType(requirement.type);
+                                    continue :field;
+                                },
+                                .leaf, .owned => {
+                                    // info.fieldNames[i] = requirement.name;
+                                    continue :field;
+                                },
+                                .composed => unreachable,
+                            }
                         }
+                    } else {
+                        info.fieldNames[i] = std.fmt.comptimePrint("__hidden_field_{d}__", .{i});
                     }
                 }
+                // for (info.fieldNames, 0..) |name, i| {
+                    // @compileLog(std.fmt.comptimePrint("name: {s}, i: {d}", .{ name, i }));
+                // }
                 return info.Construct();
             }
         }
@@ -159,8 +175,7 @@ pub const system = struct {
                                 regInfo,
                             );
                         },
-                        .leaf, .dissolve => continue,
-                        else => unreachable,
+                        else => continue,
                     }
                 },
                 else => continue,
@@ -169,11 +184,7 @@ pub const system = struct {
 
         if (!@field(Sys, fields.signature.name).qualifies(T)) return;
 
-        const Eroded = flags.Erode(T);
-        comptime {
-            std.debug.assert(util.layoutEql(T, Eroded));
-        }
-        const Named = @field(Sys, fields.signature.name).NamedType(Eroded);
+        const Named = @field(Sys, fields.signature.name).NamedType(T);
         try @field(Sys, fields.function.name)(Named, @as(*Named, @ptrCast(@alignCast(arg))), regInfo);
     }
 };
@@ -187,11 +198,14 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
     comptime {
         // create structure of arrays
         var valueTypes: [types.len]type = undefined;
-        for (types, 0..) |T, i|
-            valueTypes[i] = Array(T);
+        var flattened: [types.len]type = undefined;
+        for (types, 0..) |T, i| {
+            flattened[i] = flags.Flatten(T);
+            valueTypes[i] = Array(flattened[i]);
+        }
 
         for (requestedSystems) |System|
-            std.debug.assert(system.qualifies(System));
+            if (!system.qualifies(System)) @compileError("Error: System '" ++ @typeName(System) ++ "' is not a valid system!");
 
         const DataType = @Tuple(&valueTypes);
 
@@ -243,12 +257,12 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             ///> - Returned pointer is not guaranteed to be the same type as `value`
             ///> - May cause runtime overhead if `@TypeOf(value) != flags.Flatten(@TypeOf(value))`
             pub fn addValue(self: *@This(), value: anytype) std.mem.Allocator.Error!void {
-                const T = @TypeOf(value);
+                const T = flags.Flatten(@TypeOf(value));
                 const i = comptime for (allTypes, 0..) |J, i| {
                     if (T == J) break i;
                 } else @compileError("Error, type \"" ++ @typeName(T) ++ "\" is not in the Registry!");
 
-                try self.data[i].append(self.info.gpa, value);
+                try self.data[i].append(self.info.gpa, flags.flatten(value));
             }
 
             pub fn process(self: *@This(), delta: f32) !void {
@@ -271,7 +285,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
 
             pub const systems: []const type = requestedSystems;
             pub const arrayTypes = valueTypes;
-            pub const allTypes = types;
+            pub const allTypes = flattened;
         };
     }
 }
