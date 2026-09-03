@@ -174,23 +174,19 @@ pub fn reduce(value: anytype, comptime flag: Flags) Reduce(@TypeOf(value), flag)
         else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
     };
 
-    comptime var composedFieldCount: comptime_int = 0;
-    comptime {
-        for (info.fields) |field| {
-            if (fieldFlag(field.type) == flag)
-                // - 1 to account for flag
-                composedFieldCount += @typeInfo(value.type).@"struct".fields.len - 1;
-        }
-    }
-
-    var decomposeFields: [composedFieldCount]std.meta.FieldEnum(T) = undefined;
-    comptime {
-        var i = 0;
-        for (info.fields) |field| {
-            if (fieldFlag(field.type) == flag) {
-                decomposeFields[i] = util.strToEnum(std.meta.FiesldEnum(T), value.name);
-                i += 1;
-            }
+    var ret: Reduce(T, flag) = undefined;
+    inline for (info.fields) |field| {
+        switch (@typeInfo(field.type)) {
+            .@"struct" => {
+                const reduced = reduce(@field(value, field.name), flag);
+                inline for (@typeInfo(@TypeOf(reduced)).@"struct".fields) |subfield| {
+                    if (@hasField(@TypeOf(ret), subfield.name))
+                        @field(ret, field.name) = @field(reduced, subfield.name)
+                    else if (@hasField(@TypeOf(ret), field.name ++ "_" ++ subfield.name))
+                        @field(ret, field.name ++ "_" ++ subfield.name) = @field(reduced, subfield.name);
+                }
+            },
+            else => @field(ret, field.name) = @field(value, field.name),
         }
     }
 
