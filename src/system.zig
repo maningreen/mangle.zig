@@ -5,16 +5,34 @@ const flags = @import("flags.zig");
 const StructField = std.builtin.Type.StructField;
 const StructAttrs = std.builtin.Type.StructField.Attributes;
 
+const Argument = struct {
+    @"comptime": bool,
+    type: ?type,
+};
+
 /// Defines required fields used in system.qualifies
 pub const fields = struct {
     /// Name and type of the function of the system
     pub const function = struct {
-        const name = "process";
+        pub const name = "process";
         /// Should be read as
         /// ```zig
         /// fn (comptime T: type, _: T, _: *const RegistryInformation) Error!void`
         /// ```
-        pub const Type: type = fn (comptime type, anytype, anytype) anyerror!void;
+        pub const fields: []const Argument = &.{
+            .{
+                .@"comptime" = true,
+                .type = type,
+            },
+            .{
+                .@"comptime" = false,
+                .type = null,
+            },
+            .{
+                .@"comptime" = false,
+                .type = null,
+            },
+        };
     };
 
     /// Name and type of the signature of the system
@@ -97,63 +115,26 @@ pub const Signature = struct {
 pub fn qualifies(comptime System: type) bool {
     comptime {
         switch (@typeInfo(System)) {
-            .@"struct" => |info| {
-                for (info.decls) |d| {
-                    if (std.mem.eql(u8, d.name, fields.signature.name) and @TypeOf(@field(System, d.name)) == fields.signature.Type)
-                        break;
+            .@"struct" => {
+                if (@hasDecl(System, fields.function.name)) {
+                    const funcInfo = switch (@typeInfo(@TypeOf(@field(System, fields.function.name)))) {
+                        .@"fn" => |i| i,
+                        else => return false,
+                    };
+                    outer: for (funcInfo.params) |param| {
+                        for (fields.function.fields) |arg| {
+                            if (param.type == arg.type and param.is_generic == (arg.type == null))
+                                continue :outer;
+                        } else return false;
+                    }
                 } else return false;
-                for (info.decls) |d| {
-                    if (std.mem.eql(u8, d.name, fields.function.name) and @TypeOf(@field(System, d.name)) == fields.function.Type)
-                        break;
+                if (@hasDecl(System, fields.signature.name)) {
+                    if (@TypeOf(@field(System, fields.signature.name)) != fields.signature.Type)
+                        return false;
                 } else return false;
                 return true;
             },
             else => return false,
         }
     }
-}
-
-pub inline fn processWrapper(
-    comptime Sys: type,
-    comptime T: type,
-    arg: *T,
-    regInfo: anytype,
-) !void {
-    @setEvalBranchQuota(69420);
-    // if (!@field(Sys, fields.signature.name).qualifies(T)) return;
-
-    const info = switch (@typeInfo(T)) {
-        .@"struct" => |i| i,
-        else => @compileError("Error: Type '" ++ @typeName(T) ++ "' is not a struct!"),
-    };
-
-    inline for (info.fields) |field| {
-        switch (@typeInfo(field.type)) {
-            .@"struct" => {
-                switch (flags.fieldFlag(field.type)) {
-                    .owned => {
-                        comptime if (@typeInfo(field.type) != .@"struct") continue;
-                        try processWrapper(
-                            Sys,
-                            field.type,
-                            &@field(arg, field.name),
-                            regInfo,
-                        );
-                    },
-                    .leaf, .dissolve => continue,
-                    else => unreachable,
-                }
-            },
-            else => continue,
-        }
-    }
-
-    if (!@field(Sys, fields.signature.name).qualifies(T)) return;
-
-    const Eroded = flags.Erode(T);
-    comptime {
-        std.debug.assert(util.layoutEql(T, Eroded));
-    }
-    const Named = @field(Sys, fields.signature.name).NamedType(Eroded);
-    try @field(Sys, fields.function.name)(Named, @as(*Named, @ptrCast(@alignCast(arg))), regInfo);
 }

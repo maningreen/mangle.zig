@@ -5,10 +5,16 @@ test {
     std.testing.refAllDecls(@This());
 }
 
+pub const pathing = struct {
+    const pathSubField = "__internal_registry_type_path__";
+    const originalSubfield = "__Internal_registry_original_type__";
+    pub const pathDelimiter = '_';
+};
 const formats = struct {
     const composed = "__internal_registry_composed_flag__";
     const leaf = "__internal_registry_leaf_flag__";
     const dissolve = "__internal_registry_dissolve_flag__";
+    const identity = "__internal_registry_ownership_path__";
 };
 
 const voidValue: void = void{};
@@ -189,8 +195,7 @@ pub fn reduce(value: anytype, comptime flag: Flags) Reduce(@TypeOf(value), flag)
             else => @field(ret, field.name) = @field(value, field.name),
         }
     }
-
-    return util.decompose(value, decomposeFields);
+    return ret;
 }
 
 /// Returns whether or not str is one of the flag formats
@@ -390,6 +395,81 @@ pub inline fn Flatten(comptime T: type) type {
 /// For more information see: [Compose(T)](#mangle.flags.Compose)
 ///
 /// For a type version, see [Flatten](#mangle.flags.Flatten)
-pub inline fn flatten(comptime T: type) type {
-    return reduce(T, .composed);
+pub inline fn flatten(value: anytype) Flatten(@TypeOf(value)) {
+    return reduce(value, .composed);
+}
+
+/// Given a type `T`, if ownership is found, applies a pathing to it for runtime indexing
+///
+///> **NOTE**
+///> - see also [path](#mangle.flags.path)
+pub inline fn Path(comptime T: type) type {
+    comptime {
+        return PathInternal(T, "");
+    }
+}
+
+pub inline fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
+    comptime {
+        switch (@typeInfo(T)) {
+            .@"struct" => void{},
+            else => return T,
+        }
+        if (@hasField(T, formats.identity)) @compileError("Type '" ++ @typeName(T) ++ "' already has a path!");
+
+        var deconstructed = util.deStruct(T);
+        for (deconstructed.fieldTypes, deconstructed.fieldNames, 0..) |U, name, i| {
+            const newPrefix = prefix ++ .{pathing.pathDelimiter} ++ name;
+            deconstructed.fieldTypes[i] = PathInternal(U, newPrefix);
+        }
+        var new = deconstructed.expand(1);
+        const i = deconstructed.fieldNames.len;
+        new.fieldNames[i] = formats.identity;
+        new.fieldTypes[i] = struct {
+            const __internal_registry_type_path__ = prefix;
+            const __Internal_registry_original_type__ = T;
+        };
+        new.fieldAttributes[i] = .{};
+        return new.Construct();
+    }
+}
+
+/// Given a pointer value, retypes it into a pathed version.
+///
+///> **NOTE**:
+///> - See also, [Path](#mangle.flags.Path)
+pub fn path(value: anytype) util.PtrReinterpret(@TypeOf(value), Path(@typeInfo(@TypeOf(value)).pointer.child)) {
+    const info = switch (@typeInfo(@TypeOf(value))) {
+        .pointer => |i| i,
+        else => @compileError("Error: Type '" ++ @typeName(@TypeOf(value)) ++ "' is not a pointer!"),
+    };
+    return @as(util.PtrReinterpret(@TypeOf(value), Path(info.child)), @ptrCast(value));
+}
+
+/// Returns the type path relative to a registry top level
+/// String is delimited with `.` between each parent
+pub inline fn getPath(comptime T: type) []const u8 {
+    comptime {
+        _ = switch (@typeInfo(T)) {
+            .@"struct" => |i| i,
+            else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
+        };
+
+        if (@hasField(T, formats.identity)) {
+            return @field(@FieldType(T, formats.identity), pathing.pathSubField);
+        } else @compileError("Error: '" ++ @typeName(T) ++ "' is not pathed!");
+    }
+}
+
+pub inline fn OriginalType(comptime T: type) type {
+    comptime {
+        _ = switch (@typeInfo(T)) {
+            .@"struct" => |i| i,
+            else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
+        };
+
+        if (@hasField(T, formats.identity)) {
+            return @field(@FieldType(T, formats.identity), pathing.originalSubfield);
+        } else @compileError("Error: '" ++ @typeName(T) ++ "' is not pathed!");
+    }
 }
