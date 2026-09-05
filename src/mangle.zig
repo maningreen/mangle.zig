@@ -200,7 +200,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             }
 
             /// information provided to every system as the final argument.
-            const RegistryInformation = struct {
+            pub const RegistryInformation = struct {
                 gpa: std.mem.Allocator,
                 io: std.Io,
                 delta: f32,
