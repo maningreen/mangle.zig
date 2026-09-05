@@ -21,7 +21,6 @@ inline fn processWrapper(
     arg: *T,
     regInfo: anytype,
 ) !void {
-
     const info = switch (@typeInfo(T)) {
         .@"struct" => |i| i,
         else => @compileError("Error: Type '" ++ @typeName(T) ++ "' is not a struct!"),
@@ -131,7 +130,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 const i: comptime_int = comptime for (RegistryT.allTypes, 0..) |U, i| {
                     if (U == info.child) break i;
                 } else @compileError("Error: Type '" ++ @typeName(T) ++ "' is not in the registry!");
-                if(comptime @hasDecl(originalTypes[i], "deinit")) {
+                if (comptime @hasDecl(originalTypes[i], "deinit")) {
                     if (comptime (@TypeOf(@field(originalTypes[i], "deinit")) == DeinitType))
                         originalTypes[i].deinit(info.child, value, self.info);
                 } else return;
@@ -246,6 +245,14 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     };
                     try registry.dropQueue[i].append(self.gpa, @ptrCast(value));
                 }
+
+                /// Emits an event to every system.
+                ///
+                /// **NOTE**:
+                ///     - Is an interrupt, other events are processed on call
+                pub inline fn emit(self: *RegistryT, eventData: anytype) !void {
+                    return @as(*RegistryT, @fieldParentPtr("info", self)).emit(eventData);
+                }
             };
 
             /// Loops through the dropQueue and removes the items in the registry with a double pass
@@ -280,6 +287,14 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     for (list.items) |item|
                         try self.addValue(item);
                     list.clearRetainingCapacity();
+                }
+            }
+            
+            /// Internal function. Loops through all systems and calls `recieve` if available
+            fn emit(self: *RegistryT, event: anytype) !void {
+                inline for (systems) |Sys| {
+                    if (@hasDecl(Sys, system.fields.recieve.name)) {
+                    }
                 }
             }
 
