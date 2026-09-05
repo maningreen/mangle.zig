@@ -33,11 +33,6 @@ const MessageSystem = struct {
 
         std.debug.print("{s}", .{item.str});
         while (reader.interface.takeByte() catch '0' != item.key) {}
-        try info.dropDeferred(item);
-        try info.appendDeferred(Message{
-            .key = 'q',
-            .string = "press q",
-        });
     }
 };
 
@@ -56,7 +51,5 @@ pub fn main(init: std.process.Init) !void {
         .string = ptr,
     });
 
-    while (true) {
-        try reg.process(0);
-    }
+    try reg.process(0);
 }

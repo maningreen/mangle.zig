@@ -72,9 +72,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
         var valueTypes: [types.len]type = undefined;
         var retyped: [types.len]type = undefined;
         var dropItem: [types.len]type = undefined;
-        var appendItem: [types.len]type = undefined;
         for (types, 0..) |T, i| {
-            appendItem[i] = Array(T);
             retyped[i] = flags.Path(flags.Flatten(T));
             valueTypes[i] = Array(retyped[i]);
             dropItem[i] = Array(*retyped[i]);
@@ -84,7 +82,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             std.debug.assert(system.qualifies(System));
 
         const DataType = @Tuple(&valueTypes);
-        const AppendType = @Tuple(&appendItem);
+        const AppendType = DataType;
         const DropType = @Tuple(&dropItem);
 
         return struct {
@@ -132,18 +130,19 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     else => @compileError("Error: Type '" ++ @typeName(value) ++ "' is not a pointer!"),
                 };
                 const DeinitType: type = fn (comptime T: type, value: anytype, info: anytype) void;
-                if (comptime @hasDecl(flags.OriginalType(info.child), "deinit")) {
-                    comptime if (@TypeOf(@field(flags.OriginalType(T), "deinit")) != DeinitType)
-                        @compileError("Error: Type '" ++ @typeName(@TypeOf(@field(flags.OriginalType(info.child), "deinit"))) ++ "'s deinit does not match api type '" ++ @typeName(DeinitType) ++ "'");
-                    flags.OriginalType(info.child).deinit(info.child, value, self.info);
-                }
+                const i: comptime_int = comptime for (RegistryT.allTypes, 0..) |U, i| {
+                    if (U == info.child) break i;
+                } else @compileError("Error: Type '" ++ @typeName(T) ++ "' is not in the registry!");
+                if(comptime @hasDecl(originalTypes[i], "deinit")) {
+                    if (comptime (@TypeOf(@field(originalTypes[i], "deinit")) == DeinitType))
+                        originalTypes[i].deinit(info.child, value, self.info);
+                } else return;
             }
 
             pub fn deinit(self: *RegistryT) void {
                 inline for (0..types.len) |i| {
-                    for (self.data[i].items) |*value| {
+                    for (self.data[i].items) |*value|
                         self.itemDeinit(value);
-                    }
                     self.data[i].deinit(self.info.gpa);
                 }
             }
@@ -184,7 +183,13 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             ///> - Returned pointer is not guaranteed to be the same type as `value`
             ///> - May cause runtime overhead if `@TypeOf(value) != flags.Flatten(@TypeOf(value))`
             pub fn addValue(self: *@This(), value: anytype) std.mem.Allocator.Error!void {
-                const T = flags.Path(flags.Flatten(@TypeOf(value)));
+                const TPrime = @TypeOf(value);
+                inline for (allTypes, 0..) |U, i|
+                    // already processed
+                    if (TPrime == U)
+                        return self.data[i].append(self.info.gpa, value);
+
+                const T = flags.Path(flags.Flatten(TPrime));
                 const i = comptime for (allTypes, 0..) |J, i| {
                     if (T == J) break i;
                 } else @compileError("Error, type \"" ++ @typeName(T) ++ "\" is not in the Registry!");
@@ -204,12 +209,13 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 pub fn appendDeferred(self: *RegistryInformation, value: anytype) std.mem.Allocator.Error!void {
                     const registry: *RegistryT = @fieldParentPtr("info", self);
 
-                    const T = @TypeOf(value);
+                    const TPrime = flags.Path(flags.Flatten(@TypeOf(value)));
+                    const flattened = flags.flatten(value);
                     inline for (@typeInfo(AppendType).@"struct".fields) |field| {
-                        if (Array(T) == field.type) {
-                            break try @field(registry.appendQueue, field.name).append(self.gpa, value);
-                        } else @compileLog(@typeName(Array(T)) ++ " != " ++ @typeName(field.type));
-                    } else @compileError("Error: Type '" ++ @typeName(T) ++ "' is not in the registry!");
+                        if (Array(TPrime) == field.type) {
+                            break try @field(registry.appendQueue, field.name).append(self.gpa, flags.path(&flattened).*);
+                        }
+                    } else @compileError("Error: Type '" ++ @typeName(@TypeOf(value)) ++ "' is not in the registry!");
                 }
 
                 /// Given the registry information and a pointer to a type in the registry, queues it to removal
@@ -282,6 +288,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             pub const systems: []const type = requestedSystems;
             pub const arrayTypes = valueTypes;
             pub const allTypes = retyped;
+            pub const originalTypes: []const type = types;
         };
     }
 }
