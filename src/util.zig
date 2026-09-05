@@ -9,7 +9,7 @@ const paddingFmt = "__explicit_padding_{d}__";
 /// Given a type, say `std.mem.Allocator`
 /// return the basename of the type, in this case `Allocator`
 /// > **WARNING**:
-/// > May be ambiguous for nonunique names, when being unique matters, such as indexing use `@typeName()`
+/// > - May be ambiguous for nonunique names, when being unique matters, such as indexing use `@typeName()`
 pub fn getBaseName(comptime T: type) [:0]const u8 {
     comptime {
         const full_name = @typeName(T);
@@ -147,7 +147,7 @@ pub inline fn structEql(a: anytype, b: @TypeOf(a)) bool {
 ///> - Does not create a memory equivalent.
 ///
 ///> **TODO**
-///> - fix: name conflicts
+///> - [ ] fix: name conflicts
 ///
 ///> **COMPILE ERRORS**
 ///> - targets[n] is not to a sub-structure field
@@ -211,13 +211,11 @@ pub inline fn Decompose(comptime T: type, targets: []const std.meta.FieldEnum(T)
 ///> **NOTE**:
 ///> - runtime overhead
 ///> - See also [Decompose](#mangle.util.Decompose)
-///> - See also [mask](#mangle.util.mask)
 pub inline fn decompose(
     value: anytype,
     comptime targets: []const std.meta.FieldEnum(@TypeOf(value)),
 ) Decompose(@TypeOf(value), targets) {
     const T = @TypeOf(value);
-    if (Decompose(T, targets) == T) return value;
     const info = switch (@typeInfo(T)) {
         .@"struct" => |i| i,
         else => @compileError("Error: Type '" ++ @typeName(T) ++ "' is not a struct!"),
@@ -230,64 +228,22 @@ pub inline fn decompose(
         const contains = comptime std.mem.containsAtLeast(Fields, targets, 1, &.{std.meta.stringToEnum(Fields, field.name).?});
         if (contains) {
             const U = field.type;
+
             const uInfo = switch (@typeInfo(U)) {
                 .@"struct" => |i| i,
                 else => @compileError("Error: field '" ++ field.name ++ "' is not a struct!"),
             };
+
             for (uInfo.fields) |subfield| {
                 const subName = std.fmt.comptimePrint("{s}_{s}", .{ field.name, subfield.name });
-                if (@hasField(T, subName)) {
-                    @field(ret, subName) = @field(@field(value, field.name), subfield.name);
-                } else {
+                if (@hasField(T, subName))
+                    @field(ret, subName) = @field(@field(value, field.name), subfield.name)
+                else
                     @field(ret, subfield.name) = @field(@field(value, field.name), subfield.name);
-                }
             }
         }
     }
-}
-
-/// Given a type T and fields, masks the requested fields into padding
-///
-///> **NOTE**:
-///> - Memory equivalence is guarunteed
-///> - No name conflicts will happen
-///> - See also, [mask](#mangle.util.mask) for a runtime version
-pub inline fn Mask(comptime T: type, targets: []const std.meta.FieldEnum(T)) type {
-    comptime {
-        var info = deStructLayout(T);
-
-        var i = 0;
-        var paddingI = 0;
-        outer: for (info.fieldAttributes, info.fieldNames, info.fieldTypes) |fromAttr, fromName, FromType| {
-            if (strEql(fromName, @tagName(targets))) {
-                info.fieldAttributes[i] = .{ .@"align" = 1, .is_comptime = false, .default_value_ptr = null };
-                info.fieldNames[i] = std.fmt.comptimePrint(paddingFmt, paddingI);
-                info.fieldTypes[i] = [@sizeOf(FromType)]u8;
-                paddingI += 1;
-                i += 1;
-                continue :outer;
-            }
-            i += 1;
-            info.fieldAttributes[i] = fromAttr;
-            info.fieldNames[i] = fromName;
-            info.fieldTypes[i] = FromType;
-        }
-        return info.Construct();
-    }
-}
-
-/// Given a pointer to a value, returns a pointer back casted as the masked value
-///
-///> **NOTE**:
-///> - Value *must* be a pointer type.
-///> - No runtime overhead
-///> - See also [decompose](#mangle.util.decompose)
-///> - See also [Mask](#mangle.util.Mask)
-pub inline fn mask(
-    value: anytype,
-    comptime targets: []const std.meta.FieldEnum(@TypeOf(value)),
-) PtrReinterpret(@TypeOf(value), Mask(@TypeOf(value), targets)) {
-    return @ptrCast(value);
+    return ret;
 }
 
 /// Given a string, returns an enum literal
@@ -335,9 +291,9 @@ pub inline fn layoutEql(comptime T: type, comptime U: type) bool {
         return @sizeOf(T) == @sizeOf(U);
 
         // for (sortedT.fieldNames, sortedU.fieldNames) |nameT, nameU| {
-            // @compileLog(std.fmt.comptimePrint("field '{s}' offset A {}, offset B {}", .{ @offsetOf(T, nameT), @offsetOf(U, nameU) }));
-            // if (@offsetOf(T, nameT) != @offsetOf(U, nameU) or @FieldType(T, nameT) != @FieldType(U, nameU))
-                // return false;
+        // @compileLog(std.fmt.comptimePrint("field '{s}' offset A {}, offset B {}", .{ @offsetOf(T, nameT), @offsetOf(U, nameU) }));
+        // if (@offsetOf(T, nameT) != @offsetOf(U, nameU) or @FieldType(T, nameT) != @FieldType(U, nameU))
+        // return false;
         // } else return true;
     }
 }
