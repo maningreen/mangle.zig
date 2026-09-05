@@ -21,7 +21,6 @@ inline fn processWrapper(
     arg: *T,
     regInfo: anytype,
 ) !void {
-    @setEvalBranchQuota(69420);
 
     const info = switch (@typeInfo(T)) {
         .@"struct" => |i| i,
@@ -66,7 +65,6 @@ inline fn processWrapper(
 pub fn Registry(comptime types: []const type, comptime requestedSystems: []const type, comptime ExtraInfo: ?type) type {
     // we do a lot of comptime recursion (which is an issue to optimize)
     // so we just set it to an 'arbitrary' big number
-    @setEvalBranchQuota(69420);
     comptime {
         // create structure of arrays
         var valueTypes: [types.len]type = undefined;
@@ -147,6 +145,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 }
             }
 
+            /// Processes all items, and drops and appends after.
             pub fn process(self: *@This(), delta: f32) !void {
                 self.info.delta = delta;
                 inline for (allTypes) |T| {
@@ -218,7 +217,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     } else @compileError("Error: Type '" ++ @typeName(@TypeOf(value)) ++ "' is not in the registry!");
                 }
 
-                /// Given the registry information and a pointer to a type in the registry, queues it to removal
+                /// Given the registry information and a pointer to a type in the registry, queues it to removal.
                 /// If `value` is not owned by registry, undefined behavior.
                 pub fn dropDeferred(self: *RegistryInformation, value: anytype) std.mem.Allocator.Error!void {
                     const info = switch (@typeInfo(@TypeOf(value))) {

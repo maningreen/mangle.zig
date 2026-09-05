@@ -8,7 +8,7 @@ test {
 pub const pathing = struct {
     const pathSubField = "__internal_registry_type_path__";
     const originalSubfield = "__Internal_registry_original_type__";
-    pub const pathDelimiter = '_';
+    pub const path_delimiter = '_';
 };
 const formats = struct {
     const composed = "__internal_registry_composed_flag__";
@@ -419,7 +419,7 @@ pub inline fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
 
         var deconstructed = util.deStruct(T);
         for (deconstructed.fieldTypes, deconstructed.fieldNames, 0..) |U, name, i| {
-            const newPrefix = prefix ++ .{pathing.pathDelimiter} ++ name;
+            const newPrefix = prefix ++ .{pathing.path_delimiter} ++ name;
             deconstructed.fieldTypes[i] = PathInternal(U, newPrefix);
         }
         var new = deconstructed.expand(1);
