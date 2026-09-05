@@ -1,3 +1,9 @@
+//* The definition and implementations of systems<br>
+//* A system requires:
+//*     - `requirements: Signature`
+//*     - `process: fn` and/or `recieve: fn`
+//* In order to qualify
+
 const std = @import("std");
 const meta = std.meta;
 const util = @import("util.zig");
@@ -12,17 +18,45 @@ const Argument = struct {
 
 /// Defines required fields used in system.qualifies
 pub const fields = struct {
-    /// Name and type of the function of the system
-    pub const function = struct {
+    /// Name and type of the processing function of the system
+    pub const process = struct {
         pub const name = "process";
         /// Should be read as
         /// ```zig
-        /// fn (comptime T: type, _: T, _: *const RegistryInformation) Error!void`
+        /// fn (comptime T: type, _: *T, _: *const RegistryInformation) Error!void`
         /// ```
         pub const fields: []const Argument = &.{
             .{
                 .@"comptime" = true,
                 .type = type,
+            },
+            .{
+                .@"comptime" = false,
+                .type = null,
+            },
+            .{
+                .@"comptime" = false,
+                .type = null,
+            },
+        };
+    };
+
+    /// Name and type of the event function of the system
+    pub const recieve = struct {
+        pub const name = "recieve";
+
+        /// Should be read as
+        /// ```zig
+        /// fn (comptime T: type, _: *T, _: *const RegistryInformation) Error!void`
+        /// ```
+        pub const fields: []const Argument = &.{
+            .{
+                .@"comptime" = true,
+                .type = type,
+            },
+            .{
+                .@"comptime" = false,
+                .type = null,
             },
             .{
                 .@"comptime" = false,
@@ -57,7 +91,7 @@ pub const Signature = struct {
     /// Requirements
     fields: []const Item,
 
-    /// returns whether or not a structure (if not structure returns whether or not is contained)
+    /// returns whether or not a structure (if not structure returns whether or not it is contained)
     /// qualifies for the signature
     pub inline fn qualifies(comptime self: Signature, comptime T: type) bool {
         comptime {
@@ -91,7 +125,6 @@ pub const Signature = struct {
     ///
     ///> **NOTE**:
     ///> - `self.NamedType(T) != T` when `self.qualifies(T)` and `self.fields.len > 0`
-    ///> - Flattens T. See [Flatten](#mangle.flags.Flatten)
     ///> - Asserts `self.qualifies(T)`
     ///> - Returns a memory equivilent type to T
     pub inline fn NamedType(comptime self: Signature, comptime T: type) type {
@@ -116,18 +149,23 @@ pub fn qualifies(comptime System: type) bool {
     comptime {
         switch (@typeInfo(System)) {
             .@"struct" => {
-                if (@hasDecl(System, fields.function.name)) {
-                    const funcInfo = switch (@typeInfo(@TypeOf(@field(System, fields.function.name)))) {
+                const hasProcess = @hasDecl(System, fields.process.name);
+                const hasRecieve = @hasDecl(System, fields.recieve.name);
+                if (!(hasProcess or hasRecieve)) return false;
+                for (&.{ .{ hasProcess, fields.process }, .{ hasRecieve, fields.recieve } }) |value| {
+                    const has, const func = value;
+                    if (!has) continue;
+                    const funcInfo = switch (@typeInfo(@TypeOf(@field(System, func.name)))) {
                         .@"fn" => |i| i,
                         else => return false,
                     };
                     outer: for (funcInfo.params) |param| {
-                        for (fields.function.fields) |arg| {
+                        for (func.fields) |arg| {
                             if (param.type == arg.type and param.is_generic == (arg.type == null))
                                 continue :outer;
                         } else return false;
                     }
-                } else return false;
+                }
                 if (@hasDecl(System, fields.signature.name)) {
                     if (@TypeOf(@field(System, fields.signature.name)) != fields.signature.Type)
                         return false;

@@ -15,13 +15,7 @@ test {
     std.testing.refAllDecls(@This());
 }
 
-inline fn processWrapper(
-    comptime Sys: type,
-    comptime T: type,
-    arg: *T,
-    regInfo: anytype,
-) !void {
-
+inline fn applySystem(comptime Sys: type, comptime T: type, comptime function: @EnumLiteral(), comptime inlined: bool, value: *T, extraArgs: anytype) !void {
     const info = switch (@typeInfo(T)) {
         .@"struct" => |i| i,
         else => @compileError("Error: Type '" ++ @typeName(T) ++ "' is not a struct!"),
@@ -34,11 +28,13 @@ inline fn processWrapper(
                     .owned => {
                         comptime if (@typeInfo(field.type) != .@"struct") continue;
 
-                        try processWrapper(
+                        try applySystem(
                             Sys,
                             field.type,
-                            &@field(arg, field.name),
-                            regInfo,
+                            function,
+                            inlined,
+                            &@field(value, field.name),
+                            extraArgs,
                         );
                     },
                     .leaf, .dissolve => continue,
@@ -57,7 +53,11 @@ inline fn processWrapper(
     }
 
     const Named = @field(Sys, system.fields.signature.name).NamedType(Eroded);
-    try @field(Sys, system.fields.function.name)(Named, @as(*Named, @ptrCast(@alignCast(arg))), regInfo);
+    return @call(
+        if (inlined) .always_inline else .auto,
+        @field(Sys, @tagName(function)),
+        .{ Named, @as(*Named, @ptrCast(value)) } ++ extraArgs,
+    );
 }
 
 /// `types` should be all the types the registry will utilize,
@@ -131,7 +131,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 const i: comptime_int = comptime for (RegistryT.allTypes, 0..) |U, i| {
                     if (U == info.child) break i;
                 } else @compileError("Error: Type '" ++ @typeName(T) ++ "' is not in the registry!");
-                if(comptime @hasDecl(originalTypes[i], "deinit")) {
+                if (comptime @hasDecl(originalTypes[i], "deinit")) {
                     if (comptime (@TypeOf(@field(originalTypes[i], "deinit")) == DeinitType))
                         originalTypes[i].deinit(info.child, value, self.info);
                 } else return;
@@ -152,11 +152,13 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     const arr = self.getArrayFromType(T);
                     inline for (systems) |Sys|
                         for (arr.items) |*value|
-                            try processWrapper(
+                            try applySystem(
                                 Sys,
                                 T,
+                                .process,
+                                false,
                                 value,
-                                &self.info,
+                                .{&self.info},
                             );
                 }
                 self.drop();
@@ -246,6 +248,14 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     };
                     try registry.dropQueue[i].append(self.gpa, @ptrCast(value));
                 }
+
+                /// Emits an event to every system.
+                ///
+                /// **NOTE**:
+                ///     - Is an interrupt, other events are processed on call
+                pub inline fn emit(self: *RegistryInformation, eventData: anytype) !void {
+                    return @as(*RegistryT, @fieldParentPtr("info", self)).emit(eventData);
+                }
             };
 
             /// Loops through the dropQueue and removes the items in the registry with a double pass
@@ -280,6 +290,30 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     for (list.items) |item|
                         try self.addValue(item);
                     list.clearRetainingCapacity();
+                }
+            }
+
+            // / Internal function. Loops through all systems and calls `recieve` if available
+            fn emit(self: *RegistryT, event: anytype) !void {
+                inline for (systems) |Sys| {
+                    if (!@hasDecl(Sys, system.fields.recieve.name)) continue;
+                    inline for (allTypes, 0..) |T, i| {
+                        if (!@field(Sys, system.fields.signature.name).qualifies(T))
+                            continue;
+                        for (self.data[i].items) |*value| {
+                            try applySystem(
+                                Sys,
+                                T,
+                                .recieve,
+                                true,
+                                value,
+                                .{
+                                    event,
+                                    self.info,
+                                },
+                            );
+                        }
+                    }
                 }
             }
 

@@ -297,3 +297,36 @@ pub inline fn layoutEql(comptime T: type, comptime U: type) bool {
         // } else return true;
     }
 }
+
+/// Given two tuples, returns a type of all the arguments in one tuple
+pub inline fn TupleCat(comptime T: type, comptime U: type) type {
+    comptime {
+        const tInfo = switch (@typeInfo(T)) {
+            .@"struct" => |i| i,
+            else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
+        };
+        const uInfo = switch (@typeInfo(U)) {
+            .@"struct" => |i| i,
+            else => @compileError("Error: type '" ++ @typeName(U) ++ "' is not a struct!"),
+        };
+        const fieldCount = tInfo.fields.len + uInfo.fields.len;
+        var types: [fieldCount]type = undefined;
+        for (0..fieldCount) |i| {
+            if (i < tInfo.fields.len) {
+                types[i] = tInfo.fields[i].type;
+            } else {
+                types[i] = uInfo.fields[i - tInfo.fields.len].type;
+            }
+        }
+        return @Tuple(&types);
+    }
+}
+
+pub fn tupleCat(a: anytype, b: anytype) TupleCat(@TypeOf(a), @TypeOf(b)) {
+    var ret: TupleCat(@TypeOf(a), @TypeOf(b)) = undefined;
+    inline for (a, 0..) |item, i|
+        ret[i] = item;
+    inline for (b, @typeInfo(a).@"struct".fields.len..) |item, i|
+        ret[i] = item;
+    return ret;
+}
