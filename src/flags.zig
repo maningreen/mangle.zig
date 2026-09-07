@@ -130,6 +130,7 @@ pub inline fn Own(comptime T: type) type {
 ///> - Make name conflicts discarded in preference for higher level ones, and compileError otherwise
 pub fn Reduce(comptime T: type, comptime flag: Flags) type {
     comptime {
+        @setEvalBranchQuota(20_000);
         const info = switch (@typeInfo(T)) {
             .@"struct" => |i| i,
             else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
@@ -181,15 +182,25 @@ pub fn reduce(value: anytype, comptime flag: Flags) Reduce(@TypeOf(value), flag)
     };
 
     var ret: Reduce(T, flag) = undefined;
+    const Return = @TypeOf(ret);
+    if (T == Return)
+        return value;
+    }
     inline for (info.fields) |field| {
         switch (@typeInfo(field.type)) {
             .@"struct" => {
-                const reduced = reduce(@field(value, field.name), flag);
-                inline for (@typeInfo(@TypeOf(reduced)).@"struct".fields) |subfield| {
-                    if (@hasField(@TypeOf(ret), subfield.name))
-                        @field(ret, field.name) = @field(reduced, subfield.name)
-                    else if (@hasField(@TypeOf(ret), field.name ++ "_" ++ subfield.name))
-                        @field(ret, field.name ++ "_" ++ subfield.name) = @field(reduced, subfield.name);
+                if (@FieldType(Return, field.name) == field.type) {
+                    @field(ret, field.name) = @field(value, field.name);
+                } else {
+                    const reduced = reduce(@field(value, field.name), flag);
+                    if (fieldFlag(field.type) == flag) {
+                        for (@typeInfo(reduced).@"struct".fields) |subField| {
+                            if (@hasField(Return, subField.name))
+                                @field(ret, subField.name) = @field(reduced, subField.name)
+                            else
+                                @field(ret, field.name ++ "_" ++ subField.name) = @field(reduced, subField.name);
+                        }
+                    } else @field(ret, field.name) = reduced;
                 }
             },
             else => @field(ret, field.name) = @field(value, field.name),
