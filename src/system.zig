@@ -99,18 +99,22 @@ pub const Signature = struct {
                 .@"struct" => |i| i,
                 else => @compileError("Error, type '" ++ @typeName(T) ++ "' is not a struct!"),
             };
-            outer: for (self.fields) |Requirement| {
+
+            for (self.fields) |requirement| {
                 for (info.fields) |field| {
                     switch (flags.fieldFlag(field.type)) {
                         .composed => unreachable,
                         else => {
-                            switch (flags.fieldFlag(Requirement.type)) {
+                            const Original = if (flags.isPathed(field.type)) flags.OriginalType(field.type) else field.type;
+                            switch (flags.fieldFlag(requirement.type)) {
                                 .owned, .composed, .leaf => {
-                                    if (Requirement.type == field.type) continue :outer;
+                                    if (requirement.type == Original)
+                                        break;
                                 },
                                 .dissolve => {
-                                    if (Requirement.type == field.type or @typeInfo(Requirement.type).@"struct".fields[0].type == field.type)
-                                        continue :outer;
+                                    if (requirement.type == Original or flags.AliasType(requirement.type) == Original) {
+                                        break;
+                                    }
                                 },
                             }
                         },
@@ -133,9 +137,21 @@ pub const Signature = struct {
             if (!self.qualifies(T)) @compileError("Error, type '" ++ @typeName(T) ++ "' does not qualify!");
             field: for (self.fields) |field| {
                 for (info.fieldTypes, 0..) |U, i| {
-                    if (U == field.type) {
-                        info.fieldNames[i] = field.name;
-                        continue :field;
+                    switch (flags.fieldFlag(U)) {
+                        .dissolve => {
+                            if (U == field.type) {
+                                info.fieldNames[i] = field.name;
+                                info.fieldTypes[i] = flags.AliasType(U);
+                                continue :field;
+                            } 
+                        },
+                        .leaf, .owned => {
+                            if (U == field.type) {
+                                info.fieldNames[i] = field.name;
+                                continue :field;
+                            }
+                        },
+                        else => unreachable,
                     }
                 }
             }

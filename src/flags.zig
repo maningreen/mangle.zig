@@ -7,14 +7,14 @@ test {
 
 pub const pathing = struct {
     const pathSubField = "__internal_registry_type_path__";
-    const originalSubfield = "__Internal_registry_original_type__";
+    const originalSubfield = "__InternalRegistryOriginalType__";
     pub const path_delimiter = '_';
 };
 const formats = struct {
-    const composed = "__internal_registry_composed_flag__";
-    const leaf = "__internal_registry_leaf_flag__";
-    const dissolve = "__internal_registry_dissolve_flag__";
-    const identity = "__internal_registry_ownership_path__";
+    pub const composed = "__internal_registry_composed_flag__";
+    pub const leaf = "__internal_registry_leaf_flag__";
+    pub const dissolve = "__internal_registry_dissolve_flag__";
+    pub const identity = "__internal_registry_ownership_path__";
 };
 
 const voidValue: void = void{};
@@ -135,20 +135,25 @@ pub fn Reduce(comptime T: type, comptime flag: Flags) type {
             .@"struct" => |i| i,
             else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
         };
-        var composedFieldCount: comptime_int = 0;
+        var fieldDelta: comptime_int = 0;
+        var decomposeCount: comptime_int = 0;
+        var fieldPostDropCount: comptime_int = 0;
         // var flagCount = 0;
         for (info.fields) |value| {
             if (fieldFlag(value.type) == flag) {
                 // - 1 to account for flag
-                composedFieldCount += @typeInfo(value.type).@"struct".fields.len - 1;
+                fieldDelta += @typeInfo(value.type).@"struct".fields.len - 1;
+                for (@typeInfo(value.type).@"struct".fields) |subField| {
+                    if (isFlagFormat(subField.name)) fieldPostDropCount += 1;
+                }
+                decomposeCount += 1;
                 // flagCount += 1;
             }
         }
 
-        var decomposeFields: [composedFieldCount]std.meta.FieldEnum(T) = undefined;
+        var decomposeFields: [decomposeCount]std.meta.FieldEnum(T) = undefined;
         var i = 0;
         for (info.fields) |value| {
-            if (isFlagFormat(value.name)) continue;
             if (fieldFlag(value.type) == flag) {
                 decomposeFields[i] = util.strToEnum(std.meta.FieldEnum(T), value.name);
                 i += 1;
@@ -157,10 +162,18 @@ pub fn Reduce(comptime T: type, comptime flag: Flags) type {
 
         const Flattened = util.Decompose(T, &decomposeFields);
         const flattenedInfo = util.deStruct(Flattened);
-        var ret: util.DeStructInfo(@TypeOf(flattenedInfo).size - 0) = undefined;
+        var ret: util.DeStructInfo(@TypeOf(flattenedInfo).size - fieldPostDropCount) = undefined;
         i = 0;
-        for (flattenedInfo.fieldNames, flattenedInfo.fieldTypes, flattenedInfo.fieldAttributes) |name, Type, attr| {
-            if (isFlagFormat(name)) continue;
+        outer: for (flattenedInfo.fieldNames, flattenedInfo.fieldTypes, flattenedInfo.fieldAttributes) |name, Type, attr| {
+            if (!isFlagFormat(name)) {
+                const decls = @typeInfo(formats).@"struct".decls;
+                for (decls) |decl| {
+                    if (std.mem.containsAtLeast(u8, name, 1, @field(formats, decl.name))) {
+                        continue :outer;
+                    }
+                }
+            }
+            // if (isFlagFormat(name)) continue;
 
             ret.fieldAttributes[i] = attr;
             ret.fieldTypes[i] = Type;
@@ -185,7 +198,6 @@ pub fn reduce(value: anytype, comptime flag: Flags) Reduce(@TypeOf(value), flag)
     const Return = @TypeOf(ret);
     if (T == Return)
         return value;
-    }
     inline for (info.fields) |field| {
         switch (@typeInfo(field.type)) {
             .@"struct" => {
@@ -359,6 +371,29 @@ pub inline fn Alias(comptime Type: type, comptime label: []const u8) type {
     }
 }
 
+/// Returns a wrapped, aliased version of `value`
+pub inline fn alias(comptime T: type, value: anytype) T {
+    var ret: T = undefined;
+    inline for (@typeInfo(T).@"struct".fields) |field| {
+        comptime if (util.strEql(field.name, formats.dissolve)) continue;
+        @field(ret, field.name) = value;
+    }
+    return ret;
+}
+
+/// Returns the original type of an aliased type
+pub inline fn AliasType(comptime T: type) type {
+    comptime {
+        const info = switch (@typeInfo(T)) {
+            .@"struct" => |i| i,
+            else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
+        };
+        for (info.fields) |field| {
+            if (!isFlagFormat(field.name)) return field.type;
+        } else unreachable;
+    }
+}
+
 /// Application of `Dissolve`
 ///
 /// For more information see:
@@ -420,7 +455,7 @@ pub inline fn Path(comptime T: type) type {
     }
 }
 
-pub inline fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
+inline fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
     comptime {
         switch (@typeInfo(T)) {
             .@"struct" => void{},
@@ -430,15 +465,20 @@ pub inline fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
 
         var deconstructed = util.deStruct(T);
         for (deconstructed.fieldTypes, deconstructed.fieldNames, 0..) |U, name, i| {
-            const newPrefix = prefix ++ .{pathing.path_delimiter} ++ name;
-            deconstructed.fieldTypes[i] = PathInternal(U, newPrefix);
+            switch (fieldFlag(U)) {
+                .owned => {
+                    const newPrefix = prefix ++ .{pathing.path_delimiter} ++ name;
+                    deconstructed.fieldTypes[i] = PathInternal(U, newPrefix);
+                },
+                else => continue,
+            }
         }
         var new = deconstructed.expand(1);
         const i = deconstructed.fieldNames.len;
         new.fieldNames[i] = formats.identity;
         new.fieldTypes[i] = struct {
             const __internal_registry_type_path__ = prefix;
-            const __Internal_registry_original_type__ = T;
+            const __InternalRegistryOriginalType__ = T;
         };
         new.fieldAttributes[i] = .{};
         return new.Construct();
@@ -482,5 +522,14 @@ pub inline fn OriginalType(comptime T: type) type {
         if (@hasField(T, formats.identity)) {
             return @field(@FieldType(T, formats.identity), pathing.originalSubfield);
         } else @compileError("Error: '" ++ @typeName(T) ++ "' is not pathed!");
+    }
+}
+
+pub inline fn isPathed(comptime T: type) bool {
+    comptime {
+        return switch (@typeInfo(T)) {
+            .@"struct" => @hasField(T, formats.identity),
+            else => false,
+        };
     }
 }

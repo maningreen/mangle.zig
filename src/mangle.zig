@@ -8,6 +8,7 @@ pub const Compose = flags.Compose;
 pub const Leaf = flags.Leaf;
 pub const Own = flags.Own;
 pub const Alias = flags.Alias;
+pub const alias = flags.alias;
 pub const system = @import("system.zig");
 pub const Array = std.ArrayList;
 
@@ -47,12 +48,10 @@ inline fn applySystem(comptime Sys: type, comptime T: type, comptime function: @
 
     if (!@field(Sys, system.fields.signature.name).qualifies(T)) return;
 
-    const Eroded = flags.Erode(T);
+    const Named = @field(Sys, system.fields.signature.name).NamedType(T);
     comptime {
-        std.debug.assert(util.layoutEql(T, Eroded));
+        std.debug.assert(util.layoutEql(T, Named)); // If this fails, report an issue on github
     }
-
-    const Named = @field(Sys, system.fields.signature.name).NamedType(Eroded);
     return @call(
         if (inlined) .always_inline else .auto,
         @field(Sys, @tagName(function)),
@@ -66,6 +65,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
     // we do a lot of comptime recursion (which is an issue to optimize)
     // so we just set it to an 'arbitrary' big number
     comptime {
+        @setEvalBranchQuota(50_000);
         // create structure of arrays
         var valueTypes: [types.len]type = undefined;
         var retyped: [types.len]type = undefined;

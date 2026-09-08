@@ -154,55 +154,49 @@ pub inline fn structEql(a: anytype, b: @TypeOf(a)) bool {
 pub inline fn Decompose(comptime T: type, targets: []const std.meta.FieldEnum(T)) type {
     comptime {
         if (targets.len == 0) return T;
-        const sortedInfo = deStructLayout(T);
-        var endFieldsCount = @TypeOf(sortedInfo).size;
+        const info = switch (@typeInfo(T)) {
+            .@"struct" => |i| i,
+            else => @compileError("Error: Type '" ++ @typeName(T) ++ "' is not a struct!"),
+        };
+
+        var newFieldCount: comptime_int = @typeInfo(T).@"struct".fields.len;
         for (targets) |target| {
-            const U = @FieldType(T, @tagName(target));
-            endFieldsCount += @TypeOf(deStructLayout(U)).size - 1;
+            switch (@typeInfo(@FieldType(T, @tagName(target)))) {
+                .@"struct" => |i| newFieldCount += i.fields.len - 1,
+                else => @compileError("Error: field '" ++ @tagName(target) ++ "' on type '" ++ @typeName(T) ++ "' is not a struct!"),
+            }
         }
 
-        var endInfo: DeStructInfo(endFieldsCount) = undefined;
-        var localTopLevel: [endFieldsCount]?std.meta.FieldEnum(T) = undefined;
+        var reconstructed: DeStructInfo(newFieldCount) = undefined;
         var i = 0;
-        for (sortedInfo.fieldAttributes, sortedInfo.fieldNames, sortedInfo.fieldTypes) |fromAttr, fromName, FromType| {
+        for (info.fields) |field| {
             for (targets) |target| {
-                if (strEql(fromName, @tagName(target))) {
-                    const destructedFrom = deStructLayout(FromType);
-                    for (
-                        destructedFrom.fieldAttributes,
-                        destructedFrom.fieldNames,
-                        destructedFrom.fieldTypes,
-                    ) |subAttr, subName, SubType| {
-                        endInfo.fieldAttributes[i] = subAttr;
-                        endInfo.fieldNames[i] = subName;
-                        endInfo.fieldTypes[i] = SubType;
-                        localTopLevel[i] = target;
-                        i += 1;
-                    }
+                if (!strEql(@tagName(target), field.name))
                     continue;
-                } else {
-                    endInfo.fieldAttributes[i] = fromAttr;
-                    endInfo.fieldNames[i] = fromName;
-                    endInfo.fieldTypes[i] = FromType;
-                    localTopLevel[i] = null;
+                for (@typeInfo(field.type).@"struct".fields) |subField| {
+                    reconstructed.fieldTypes[i] = subField.type;
+                    reconstructed.fieldNames[i] = field.name ++ "_" ++ subField.name;
+                    reconstructed.fieldAttributes[i] = .{
+                        .@"align" = subField.alignment,
+                        .@"comptime" = subField.is_comptime,
+                        .default_value_ptr = subField.default_value_ptr,
+                    };
                     i += 1;
                 }
+                break;
+            } else {
+                reconstructed.fieldTypes[i] = field.type;
+                reconstructed.fieldNames[i] = field.name;
+                reconstructed.fieldAttributes[i] = .{
+                    .@"align" = field.alignment,
+                    .@"comptime" = field.is_comptime,
+                    .default_value_ptr = field.default_value_ptr,
+                };
+                i += 1;
             }
         }
-        for (0..endFieldsCount) |j| {
-            for (j + 1..endFieldsCount) |k| {
-                if (strEql(endInfo.fieldNames[j], endInfo.fieldNames[k])) {
-                    if (localTopLevel[j]) |parent| {
-                        std.debug.assert(localTopLevel[k] == null);
-                        endInfo.fieldNames[j] = std.fmt.comptimePrint("{s}_{s}", .{ @tagName(parent), endInfo.fieldNames[j] });
-                    } else {
-                        std.debug.assert(localTopLevel[k] != null);
-                        endInfo.fieldNames[k] = std.fmt.comptimePrint("{s}_{s}", .{ @tagName(localTopLevel[k]), endInfo.fieldNames[k] });
-                    }
-                }
-            }
-        }
-        return endInfo.Construct();
+
+        return reconstructed.Construct();
     }
 }
 
@@ -288,7 +282,7 @@ pub inline fn layoutEql(comptime T: type, comptime U: type) bool {
         // const sortedT = deStructLayout(T);
         // const sortedU = deStructLayout(U);
 
-        return @sizeOf(T) == @sizeOf(U);
+        return @sizeOf(T) == @sizeOf(U) and @alignOf(T) == @alignOf(U);
 
         // for (sortedT.fieldNames, sortedU.fieldNames) |nameT, nameU| {
         // @compileLog(std.fmt.comptimePrint("field '{s}' offset A {}, offset B {}", .{ @offsetOf(T, nameT), @offsetOf(U, nameU) }));
@@ -296,37 +290,4 @@ pub inline fn layoutEql(comptime T: type, comptime U: type) bool {
         // return false;
         // } else return true;
     }
-}
-
-/// Given two tuples, returns a type of all the arguments in one tuple
-pub inline fn TupleCat(comptime T: type, comptime U: type) type {
-    comptime {
-        const tInfo = switch (@typeInfo(T)) {
-            .@"struct" => |i| i,
-            else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
-        };
-        const uInfo = switch (@typeInfo(U)) {
-            .@"struct" => |i| i,
-            else => @compileError("Error: type '" ++ @typeName(U) ++ "' is not a struct!"),
-        };
-        const fieldCount = tInfo.fields.len + uInfo.fields.len;
-        var types: [fieldCount]type = undefined;
-        for (0..fieldCount) |i| {
-            if (i < tInfo.fields.len) {
-                types[i] = tInfo.fields[i].type;
-            } else {
-                types[i] = uInfo.fields[i - tInfo.fields.len].type;
-            }
-        }
-        return @Tuple(&types);
-    }
-}
-
-pub fn tupleCat(a: anytype, b: anytype) TupleCat(@TypeOf(a), @TypeOf(b)) {
-    var ret: TupleCat(@TypeOf(a), @TypeOf(b)) = undefined;
-    inline for (a, 0..) |item, i|
-        ret[i] = item;
-    inline for (b, @typeInfo(a).@"struct".fields.len..) |item, i|
-        ret[i] = item;
-    return ret;
 }
