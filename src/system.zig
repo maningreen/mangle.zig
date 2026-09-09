@@ -101,6 +101,10 @@ pub const Signature = struct {
             };
 
             for (self.fields) |requirement| {
+                const U = switch (@typeInfo(requirement.type)) {
+                    .@"struct" => flags.Flatten(requirement.type),
+                    else => requirement.type,
+                };
                 for (info.fields) |field| {
                     switch (flags.fieldFlag(field.type)) {
                         .composed => unreachable,
@@ -108,22 +112,27 @@ pub const Signature = struct {
                             const Original = if (flags.isPathed(field.type)) flags.OriginalType(field.type) else field.type;
                             switch (flags.fieldFlag(requirement.type)) {
                                 .owned, .composed, .leaf => {
-                                    if (requirement.type == Original)
+                                    if (U == Original) {
                                         break;
+                                    }
                                 },
                                 .dissolve => {
-                                    if (requirement.type == Original or flags.AliasType(requirement.type) == Original) {
+                                    if (U == Original) {
                                         break;
                                     }
                                 },
                             }
                         },
                     }
-                } else return false;
+                } else {
+                    return false;
+                }
             }
             return true;
         }
     }
+
+    const voidValue: void = void{};
 
     /// Returns the inputed structure with names according to the fields
     ///
@@ -136,18 +145,24 @@ pub const Signature = struct {
             var info = util.deStruct(T);
             if (!self.qualifies(T)) @compileError("Error, type '" ++ @typeName(T) ++ "' does not qualify!");
             field: for (self.fields) |field| {
+                const Flattened = switch (@typeInfo(field.type)) {
+                    .@"struct" => flags.Flatten(field.type),
+                    else => field.type,
+                };
                 for (info.fieldTypes, 0..) |U, i| {
                     switch (flags.fieldFlag(U)) {
                         .dissolve => {
-                            if (U == field.type) {
+                            if (U == Flattened) {
                                 info.fieldNames[i] = field.name;
                                 info.fieldTypes[i] = flags.AliasType(U);
+                                info.fieldAttributes[i].default_value_ptr = null;
                                 continue :field;
-                            } 
+                            }
                         },
                         .leaf, .owned => {
-                            if (U == field.type) {
+                            if (U == Flattened) {
                                 info.fieldNames[i] = field.name;
+                                info.fieldTypes[i] = field.type;
                                 continue :field;
                             }
                         },

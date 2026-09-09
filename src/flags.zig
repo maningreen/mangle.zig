@@ -17,7 +17,7 @@ const formats = struct {
     pub const identity = "__internal_registry_ownership_path__";
 };
 
-const voidValue: void = void{};
+const voidValue: void = {};
 
 /// Flags the engine uses internally
 pub const Flags = enum {
@@ -46,7 +46,6 @@ pub const Flags = enum {
 ///> -  Methods are lost on ApplyMetadata(T)
 ///
 ///>**TODO**:
-///> -  - [ ] allow 'unwrapping'
 ///> -  - [ ] add format checking
 pub fn ApplyMetadata(comptime T: type, name: []const u8) type {
     comptime {
@@ -130,41 +129,73 @@ pub inline fn Own(comptime T: type) type {
 ///> - Make name conflicts discarded in preference for higher level ones, and compileError otherwise
 pub fn Reduce(comptime T: type, comptime flag: Flags) type {
     comptime {
-        @setEvalBranchQuota(20_000);
+        @setEvalBranchQuota(75_000);
         const info = switch (@typeInfo(T)) {
             .@"struct" => |i| i,
             else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
         };
+        var deconstructed = util.deStruct(T);
+
+        for (deconstructed.fieldTypes, 0..) |V, i| {
+            if (@typeInfo(V) == .@"struct") {
+                deconstructed.fieldTypes[i] = Reduce(V, flag);
+            }
+        }
+
+        // skip if no changes made
+        for (deconstructed.fieldTypes, info.fields) |V, field| {
+            if (V != field.type or fieldFlag(V) == flag)
+                break;
+        } else return T;
+
         var fieldDelta: comptime_int = 0;
-        var decomposeCount: comptime_int = 0;
         var fieldPostDropCount: comptime_int = 0;
-        // var flagCount = 0;
-        for (info.fields) |value| {
-            if (fieldFlag(value.type) == flag) {
-                // - 1 to account for flag
-                fieldDelta += @typeInfo(value.type).@"struct".fields.len - 1;
-                for (@typeInfo(value.type).@"struct".fields) |subField| {
-                    if (isFlagFormat(subField.name)) fieldPostDropCount += 1;
+        var decomposeCount: comptime_int = 0;
+
+        // just a count pass
+        for (deconstructed.fieldTypes, 0..) |V, i| {
+            if (@typeInfo(V) == .@"struct") {
+                const U = deconstructed.fieldTypes[i];
+                if (fieldFlag(U) == flag) {
+                    // - 1 to account for flag
+                    fieldDelta += @typeInfo(U).@"struct".fields.len - 1;
+                    for (@typeInfo(U).@"struct".fields) |subField| {
+                        if (isFlagFormat(subField.name)) fieldPostDropCount += 1;
+                    }
+                    decomposeCount += 1;
+                    // flagCount += 1;
                 }
-                decomposeCount += 1;
-                // flagCount += 1;
+            }
+        }
+
+        // fix value ptrs
+        for (deconstructed.fieldTypes, 0..) |V, i| {
+            if (@typeInfo(V) == .@"struct") {
+                if (deconstructed.fieldAttributes[i].default_value_ptr) |p| {
+                    const reducedPtr = reduce(@as(*const V, @alignCast(@ptrCast(p))).*, flag);
+                    const W = struct {
+                        const value: @TypeOf(reducedPtr) = reducedPtr;
+                    };
+                    deconstructed.fieldAttributes[i].default_value_ptr = &W.value;
+                }
             }
         }
 
         var decomposeFields: [decomposeCount]std.meta.FieldEnum(T) = undefined;
         var i = 0;
-        for (info.fields) |value| {
-            if (fieldFlag(value.type) == flag) {
-                decomposeFields[i] = util.strToEnum(std.meta.FieldEnum(T), value.name);
+        for (deconstructed.fieldTypes, deconstructed.fieldNames) |U, name| {
+            if (fieldFlag(U) == flag) {
+                decomposeFields[i] = util.strToEnum(std.meta.FieldEnum(T), name);
                 i += 1;
             }
         }
 
-        const Flattened = util.Decompose(T, &decomposeFields);
+        const Flattened = util.Decompose(deconstructed.Construct(), &decomposeFields);
         const flattenedInfo = util.deStruct(Flattened);
         var ret: util.DeStructInfo(@TypeOf(flattenedInfo).size - fieldPostDropCount) = undefined;
         i = 0;
         outer: for (flattenedInfo.fieldNames, flattenedInfo.fieldTypes, flattenedInfo.fieldAttributes) |name, Type, attr| {
+            // drop inherited flags
             if (!isFlagFormat(name)) {
                 const decls = @typeInfo(formats).@"struct".decls;
                 for (decls) |decl| {
@@ -173,7 +204,6 @@ pub fn Reduce(comptime T: type, comptime flag: Flags) type {
                     }
                 }
             }
-            // if (isFlagFormat(name)) continue;
 
             ret.fieldAttributes[i] = attr;
             ret.fieldTypes[i] = Type;
@@ -201,15 +231,17 @@ pub fn reduce(value: anytype, comptime flag: Flags) Reduce(@TypeOf(value), flag)
     inline for (info.fields) |field| {
         switch (@typeInfo(field.type)) {
             .@"struct" => {
-                if (@FieldType(Return, field.name) == field.type) {
-                    @field(ret, field.name) = @field(value, field.name);
+                if (@hasField(Return, field.name)) {
+                    if (@FieldType(Return, field.name) == field.type) {
+                        @field(ret, field.name) = @field(value, field.name);
+                    }
                 } else {
                     const reduced = reduce(@field(value, field.name), flag);
                     if (fieldFlag(field.type) == flag) {
-                        for (@typeInfo(reduced).@"struct".fields) |subField| {
+                        inline for (@typeInfo(@TypeOf(reduced)).@"struct".fields) |subField| {
                             if (@hasField(Return, subField.name))
                                 @field(ret, subField.name) = @field(reduced, subField.name)
-                            else
+                            else if (@hasField(Return, field.name ++ "_" ++ subField.name))
                                 @field(ret, field.name ++ "_" ++ subField.name) = @field(reduced, subField.name);
                         }
                     } else @field(ret, field.name) = reduced;
@@ -354,31 +386,42 @@ inline fn Dissolve(comptime T: type) type {
 /// `label` will be the name of the field, and is of type `T`
 pub inline fn Alias(comptime Type: type, comptime label: []const u8) type {
     comptime {
-        const T = Dissolve(@Struct(
+        const T = @Struct(
             .auto,
             null,
-            &.{label},
-            &.{Type},
+            &.{ label, formats.dissolve },
+            &.{ Type, void },
             &.{
                 std.builtin.Type.StructField.Attributes{
                     .@"align" = null,
                     .default_value_ptr = null,
                     .@"comptime" = false,
                 },
+                std.builtin.Type.StructField.Attributes{
+                    .@"align" = null,
+                    .default_value_ptr = &voidValue,
+                    .@"comptime" = false,
+                },
             },
-        ));
+        );
         return T;
     }
 }
 
 /// Returns a wrapped, aliased version of `value`
 pub inline fn alias(comptime T: type, value: anytype) T {
-    var ret: T = undefined;
-    inline for (@typeInfo(T).@"struct".fields) |field| {
-        comptime if (util.strEql(field.name, formats.dissolve)) continue;
-        @field(ret, field.name) = value;
+    switch (@typeInfo(T)) {
+        .@"struct" => |i| {
+            var ret: T = undefined;
+            @field(ret, formats.dissolve) = void{};
+            inline for (i.fields) |field| {
+                comptime if (util.strEql(field.name, formats.dissolve)) continue;
+                @field(ret, field.name) = value;
+            }
+            return ret;
+        },
+        else => @compileError("Error: Type '" ++ @typeName(T) ++ "' is not a struct!"),
     }
-    return ret;
 }
 
 /// Returns the original type of an aliased type
@@ -392,6 +435,16 @@ pub inline fn AliasType(comptime T: type) type {
             if (!isFlagFormat(field.name)) return field.type;
         } else unreachable;
     }
+}
+
+pub inline fn aliasUnwrap(value: anytype) AliasType(@TypeOf(value)) {
+    const info = switch (@typeInfo(@TypeOf(value))) {
+        .@"struct" => |i| i,
+        else => @compileError("Error: type '" ++ @typeName(@TypeOf(value)) ++ "' is not a struct!"),
+    };
+    inline for (info.fields) |field|
+        if (comptime !isFlagFormat(field.name))
+            return @field(value, field.name);
 }
 
 /// Application of `Dissolve`
@@ -531,5 +584,17 @@ pub inline fn isPathed(comptime T: type) bool {
             .@"struct" => @hasField(T, formats.identity),
             else => false,
         };
+    }
+}
+
+pub inline fn aliasName(comptime T: type) [:0]const u8 {
+    comptime {
+        const info = switch (@typeInfo(T)) {
+            .@"struct" => |i| i,
+            else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not aliased!"),
+        };
+        for (info.fields) |field| {
+            if (!isFlagFormat(field.name)) return field.name;
+        }
     }
 }

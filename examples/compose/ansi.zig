@@ -21,7 +21,10 @@ pub const cursor = struct {
     pub const save = "\x1b[s";
     pub const restore = "\x1b[u";
 
-    const set = "ESC[{d};{d}H";
+    pub const set = "\x1b[{d};{d}H";
+
+    pub const hide = "\x1b[?25l";
+    pub const show = "\x1b[?25h";
 };
 
 pub const colors = struct {
@@ -48,4 +51,8 @@ pub const styles = struct {
     pub const blink = "\x1b[5m";
     pub const reverse = "\x1b[7m";
     pub const strikethrough = "\x1b[9m";
+};
+
+pub const screen = struct {
+    pub const double_buffer = "\x1b[?47h";
 };

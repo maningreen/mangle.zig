@@ -14,12 +14,30 @@ pub fn mul(a: Vec2, b: Vec2) Vec2 {
 pub fn sub(a: Vec2, b: Vec2) Vec2 {
     return .{ .x = a.x - b.x, .y = a.y - b.y };
 }
+pub fn div(a: Vec2, b: Vec2) Vec2 {
+    return .{ .x = a.x / b.x, .y = a.y / b.y };
+}
 pub fn scale(a: Vec2, scalar: f32) Vec2 {
     return .{ .x = a.x * scalar, .y = a.y * scalar };
 }
 
+pub fn magSqr(self: Vec2) f32 {
+    return std.math.pow(f32, self.x, 2) + std.math.pow(f32, self.y, 2);
+}
+
+pub fn mag(self: Vec2) f32 {
+    return @sqrt(std.math.pow(f32, self.x, 2) + std.math.pow(f32, self.y, 2));
+}
+
+pub fn fromPolar(theta: f32, magnitude: f32) Vec2 {
+    return .{
+        .x = @cos(theta) * magnitude,
+        .y = @sin(theta) * magnitude,
+    };
+}
+
 pub fn draw(self: Vec2, str: []const u8) void {
-    const casted = .{ @trunc(self.y / 2), @trunc(self.x) };
+    const casted = .{ @trunc(1 + (self.y / 2)), @trunc(self.x + 1) };
     std.debug.print(ansi.cursor.set, casted);
     std.debug.print("{s}", .{str});
 }

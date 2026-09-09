@@ -49,14 +49,42 @@ pub fn DeStructInfo(count: comptime_int) type {
         /// Constructs a struct with `@Struct` according to fields
         /// [See also ConstructExtra](#mangle.util.DeStructInfo.ConstructExtra)
         pub inline fn Construct(comptime self: @This()) type {
-            return @Struct(.auto, null, &self.fieldNames, &self.fieldTypes, &self.fieldAttributes);
+            return self.ConstructExtra(.auto, null);
         }
 
         /// Constructs a struct with `@Struct` according to fields
         /// allows for extra options passed in
         /// [See also ](#mangle.Util.DeStructInfo.Construct)
         pub inline fn ConstructExtra(comptime self: @This(), layout: std.builtin.Type.ContainerLayout, backing: ?type) type {
-            return @Struct(layout, backing, &self.fieldNames, &self.fieldTypes, &self.fieldAttributes);
+            var defaultCount: comptime_int = 0;
+            for (self.fieldAttributes) |attr| {
+                if (attr.default_value_ptr) |_| defaultCount += 1;
+            }
+
+            const DefaultContainer = @Tuple(&([_]type{?*const anyopaque} ** defaultCount));
+            comptime var default: DefaultContainer = undefined;
+            var i = 0;
+            for (self.fieldAttributes,) |attr| {
+                if (attr.default_value_ptr) |ptr| {
+                    default[i] = ptr;
+                    i += 1;
+                }
+            }
+            const T = struct {
+                const value: DefaultContainer = default;
+            };
+            i = 0;
+            var newAttrs: [self.fieldAttributes.len]std.builtin.Type.StructField.Attributes = undefined;
+            for (self.fieldAttributes, 0..) |attr, j| {
+                newAttrs[j] = attr;
+                if (attr.default_value_ptr) |_| {
+                    newAttrs[j].default_value_ptr = T.value[i];
+                    i += 1;
+                }
+            }
+
+            const Result = @Struct(layout, backing, &self.fieldNames, &self.fieldTypes, &newAttrs);
+            return Result;
         }
     };
 }

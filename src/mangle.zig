@@ -65,7 +65,6 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
     // we do a lot of comptime recursion (which is an issue to optimize)
     // so we just set it to an 'arbitrary' big number
     comptime {
-        @setEvalBranchQuota(50_000);
         // create structure of arrays
         var valueTypes: [types.len]type = undefined;
         var retyped: [types.len]type = undefined;
@@ -91,7 +90,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             appendQueue: AppendType,
             dropQueue: DropType,
 
-            pub fn init(io: std.Io, gpa: std.mem.Allocator, extra: if (ExtraInfo) |_| ExtraInfo else void) @This() {
+            pub fn init(io: std.Io, gpa: std.mem.Allocator, extra: if (ExtraInfo) |T| T else void) @This() {
                 var data: DataType = undefined;
                 var dropVal: DropType = undefined;
                 var appendVal: AppendType = undefined;
@@ -213,9 +212,9 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     const TPrime = flags.Path(flags.Flatten(@TypeOf(value)));
                     const flattened = flags.flatten(value);
                     inline for (@typeInfo(AppendType).@"struct".fields) |field| {
-                        if (Array(TPrime) == field.type) {
-                            break try @field(registry.appendQueue, field.name).append(self.gpa, flags.path(&flattened).*);
-                        }
+                        if (Array(TPrime) == field.type)
+                            break try @field(registry.appendQueue, field.name)
+                                .append(self.gpa, flags.path(&flattened).*);
                     } else @compileError("Error: Type '" ++ @typeName(@TypeOf(value)) ++ "' is not in the registry!");
                 }
 
@@ -253,7 +252,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 ///
                 /// **NOTE**:
                 ///     - Is an interrupt, other events are processed on call
-                pub inline fn emit(self: *RegistryInformation, eventData: anytype) !void {
+                pub fn emit(self: *RegistryInformation, eventData: anytype) !void {
                     return @as(*RegistryT, @fieldParentPtr("info", self)).emit(eventData);
                 }
             };
