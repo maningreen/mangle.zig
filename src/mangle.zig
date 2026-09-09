@@ -280,7 +280,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                                 );
                         _ = @field(self.data, field.name).swapRemove(@as(usize, @intCast(index)));
                     }
-                    @field(self.dropQueue, field.name).clearRetainingCapacity();
+                    @field(self.dropQueue, field.name).clearAndFree(self.info.gpa);
                 }
             }
 
@@ -289,7 +289,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 inline for (&self.appendQueue) |*list| {
                     for (list.items) |item|
                         try self.addValue(item);
-                    list.clearRetainingCapacity();
+                    list.clearAndFree(self.info.gpa);
                 }
             }
 
