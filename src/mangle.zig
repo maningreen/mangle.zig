@@ -328,7 +328,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 }
             }
 
-            // / Internal function. Loops through all systems and calls `recieve` if available
+            // / Internal function. Loops through all systems and calls `receive` if available
             /// Emits an event to every system.
             ///
             /// **NOTE**:
@@ -336,7 +336,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             ///     - See also, [emit](#mangle.Registry.RegistryInformation.emit)
             fn emit(self: *RegistryT, event: anytype) !void {
                 inline for (systems) |Sys| {
-                    if (!@hasDecl(Sys, system.fields.recieve.name)) continue;
+                    if (!@hasDecl(Sys, system.fields.receive.name)) continue;
                     inline for (allTypes, 0..) |T, i| {
                         if (!@field(Sys, system.fields.signature.name).qualifies(T))
                             continue;
@@ -344,7 +344,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                             try applySystem(
                                 Sys,
                                 T,
-                                .recieve,
+                                .receive,
                                 true,
                                 value,
                                 .{

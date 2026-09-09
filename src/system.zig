@@ -1,7 +1,7 @@
 //* The definition and implementations of systems<br>
 //* A system requires:
 //*     - `requirements: Signature`
-//*     - `process: fn` and/or `recieve: fn`
+//*     - `process: fn` and/or `receive: fn`
 //* In order to qualify
 
 const std = @import("std");
@@ -42,8 +42,8 @@ pub const fields = struct {
     };
 
     /// Name and type of the event function of the system
-    pub const recieve = struct {
-        pub const name = "recieve";
+    pub const receive = struct {
+        pub const name = "receive";
 
         /// Should be read as
         /// ```zig
@@ -187,9 +187,9 @@ pub fn qualifies(comptime System: type) bool {
         switch (@typeInfo(System)) {
             .@"struct" => {
                 const hasProcess = @hasDecl(System, fields.process.name);
-                const hasRecieve = @hasDecl(System, fields.recieve.name);
-                if (!(hasProcess or hasRecieve)) return false;
-                for (&.{ .{ hasProcess, fields.process }, .{ hasRecieve, fields.recieve } }) |value| {
+                const hasreceive = @hasDecl(System, fields.recieve.name);
+                if (!(hasProcess or hasreceive)) return false;
+                for (&.{ .{ hasProcess, fields.process }, .{ hasreceive, fields.recieve } }) |value| {
                     const has, const func = value;
                     if (!has) continue;
                     const funcInfo = switch (@typeInfo(@TypeOf(@field(System, func.name)))) {
