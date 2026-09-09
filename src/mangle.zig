@@ -8,6 +8,7 @@ pub const Compose = flags.Compose;
 pub const Leaf = flags.Leaf;
 pub const Own = flags.Own;
 pub const Alias = flags.Alias;
+pub const alias = flags.alias;
 pub const system = @import("system.zig");
 pub const Array = std.ArrayList;
 
@@ -47,12 +48,10 @@ inline fn applySystem(comptime Sys: type, comptime T: type, comptime function: @
 
     if (!@field(Sys, system.fields.signature.name).qualifies(T)) return;
 
-    const Eroded = flags.Erode(T);
+    const Named = @field(Sys, system.fields.signature.name).NamedType(T);
     comptime {
-        std.debug.assert(util.layoutEql(T, Eroded));
+        std.debug.assert(util.layoutEql(T, Named)); // If this fails, report an issue on github
     }
-
-    const Named = @field(Sys, system.fields.signature.name).NamedType(Eroded);
     return @call(
         if (inlined) .always_inline else .auto,
         @field(Sys, @tagName(function)),
@@ -91,7 +90,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             appendQueue: AppendType,
             dropQueue: DropType,
 
-            pub fn init(io: std.Io, gpa: std.mem.Allocator, extra: if (ExtraInfo) |_| ExtraInfo else void) @This() {
+            pub fn init(io: std.Io, gpa: std.mem.Allocator, extra: if (ExtraInfo) |T| T else void) @This() {
                 var data: DataType = undefined;
                 var dropVal: DropType = undefined;
                 var appendVal: AppendType = undefined;
@@ -213,9 +212,9 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     const TPrime = flags.Path(flags.Flatten(@TypeOf(value)));
                     const flattened = flags.flatten(value);
                     inline for (@typeInfo(AppendType).@"struct".fields) |field| {
-                        if (Array(TPrime) == field.type) {
-                            break try @field(registry.appendQueue, field.name).append(self.gpa, flags.path(&flattened).*);
-                        }
+                        if (Array(TPrime) == field.type)
+                            break try @field(registry.appendQueue, field.name)
+                                .append(self.gpa, flags.path(&flattened).*);
                     } else @compileError("Error: Type '" ++ @typeName(@TypeOf(value)) ++ "' is not in the registry!");
                 }
 
@@ -253,7 +252,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 ///
                 /// **NOTE**:
                 ///     - Is an interrupt, other events are processed on call
-                pub inline fn emit(self: *RegistryInformation, eventData: anytype) !void {
+                pub fn emit(self: *RegistryInformation, eventData: anytype) !void {
                     return @as(*RegistryT, @fieldParentPtr("info", self)).emit(eventData);
                 }
             };
@@ -280,7 +279,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                                 );
                         _ = @field(self.data, field.name).swapRemove(@as(usize, @intCast(index)));
                     }
-                    @field(self.dropQueue, field.name).clearRetainingCapacity();
+                    @field(self.dropQueue, field.name).clearAndFree(self.info.gpa);
                 }
             }
 
@@ -289,7 +288,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 inline for (&self.appendQueue) |*list| {
                     for (list.items) |item|
                         try self.addValue(item);
-                    list.clearRetainingCapacity();
+                    list.clearAndFree(self.info.gpa);
                 }
             }
 
