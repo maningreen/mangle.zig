@@ -111,7 +111,12 @@ pub const Signature = struct {
                         else => {
                             const Original = if (flags.isPathed(field.type)) flags.OriginalType(field.type) else field.type;
                             switch (flags.fieldFlag(requirement.type)) {
-                                .owned, .composed, .leaf => {
+                                .owned => {
+                                    if (U == Original or flags.Leaf(U) == Original) {
+                                        break;
+                                    }
+                                },
+                                .leaf => {
                                     if (U == Original) {
                                         break;
                                     }
@@ -121,6 +126,7 @@ pub const Signature = struct {
                                         break;
                                     }
                                 },
+                                .composed => unreachable,
                             }
                         },
                     }

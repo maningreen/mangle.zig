@@ -7,6 +7,9 @@ const ansi = @import("ansi.zig");
 const Vec2 = @import("vec2.zig");
 const print = std.debug.print;
 
+// constants
+const replicateThreshold = 0.95;
+
 // Simple data types
 const Position = mangle.Alias(Vec2, "position");
 const Velocity = mangle.Alias(Vec2, "velocty");
@@ -15,12 +18,14 @@ const Rectangle = struct {
     pos: Vec2,
     dim: Vec2,
 };
+const ReplicateData = struct {
+    target_char: Char,
+    child: type,
+};
 
 // Behavior flags
 const Wrap = mangle.Alias(void, "wrap");
 const Bounce = mangle.Alias(void, "bounce");
-
-const replicateThreshold = 0.95;
 
 const Particle = struct {
     pos: Position,
@@ -30,7 +35,15 @@ const Particle = struct {
 
 const WrappingParticle = struct {
     particle: mangle.Compose(Particle),
-    wrap: Wrap,
+    wrap: Wrap = .{ .wrap = {} },
+};
+
+const ReplicatingWrap = struct {
+    particle: mangle.Compose(WrappingParticle),
+    comptime copy: mangle.Leaf(ReplicateData) = .{
+        .target_char = mangle.alias(Char, 'w'),
+        .child = WrappingParticle,
+    },
 };
 
 const BouncingParticle = struct {
@@ -40,7 +53,10 @@ const BouncingParticle = struct {
 
 const ReplicatingBounce = struct {
     bouncing: mangle.Compose(BouncingParticle),
-    comptime child: type = BouncingParticle,
+    comptime copy: mangle.Leaf(ReplicateData) = .{
+        .target_char = mangle.alias(Char, 'b'),
+        .child = BouncingParticle,
+    },
 };
 
 const DrawParticle = struct {
@@ -107,8 +123,7 @@ const ReplicateSystem = struct {
         .fields = &.{
             .{ .name = "pos", .type = Position },
             .{ .name = "vel", .type = Velocity },
-            .{ .name = "char", .type = Char },
-            .{ .name = "child", .type = type },
+            .{ .name = "copy", .type = ReplicateData },
         },
     };
 
@@ -116,14 +131,14 @@ const ReplicateSystem = struct {
         if (info.extra.rand.float(f32) > replicateThreshold) {
             const velMag = value.vel.mag();
             try info.appendDeferred(
-                value.child{
+                value.copy.child{
                     .particle = .{
                         .pos = mangle.alias(Position, value.pos),
                         .vel = mangle.alias(
                             Velocity,
                             Vec2.fromPolar(info.extra.rand.float(f32) * std.math.pi * 2, velMag),
                         ),
-                        .char = mangle.alias(Char, value.char),
+                        .char = value.copy.target_char,
                     },
                 },
             );
@@ -138,6 +153,7 @@ const Registry = mangle.Registry(
         WrappingParticle,
         BouncingParticle,
         ReplicatingBounce,
+        ReplicatingWrap,
     },
     &.{
         DrawParticle,
@@ -170,27 +186,20 @@ pub fn main(init: std.process.Init) !void {
     );
     defer registry.deinit();
 
-    try registry.addValue(WrappingParticle{
+    try registry.addValue(ReplicatingWrap{
         .particle = .{
-            .pos = mangle.alias(Position, Vec2{ .x = 2, .y = 2 }),
-            .vel = mangle.alias(Velocity, Vec2{ .x = 10, .y = 10 }),
-            .char = mangle.alias(Char, 'w'),
+            .particle = .{
+                .pos = mangle.alias(Position, Vec2{ .x = 2, .y = 2 }),
+                .vel = mangle.alias(Velocity, Vec2{ .x = 10, .y = 10 }),
+                .char = mangle.alias(Char, 'W'),
+            },
         },
-        .wrap = .{ .wrap = void{} },
-    });
-    try registry.addValue(BouncingParticle{
-        .particle = .{
-            .pos = mangle.alias(Position, Vec2{ .x = 1, .y = 2 }),
-            .vel = mangle.alias(Velocity, Vec2{ .x = -10, .y = 10 }),
-            .char = mangle.alias(Char, 'b'),
-        },
-        .bounce = .{ .bounce = void{} },
     });
     try registry.addValue(ReplicatingBounce{
         .bouncing = .{
             .particle = .{
                 .pos = mangle.alias(Position, Vec2{ .x = 3, .y = 4 }),
-                .vel = mangle.alias(Velocity, Vec2{ .x = 3, .y = 4 }),
+                .vel = mangle.alias(Velocity, Vec2{ .x = -10, .y = 10 }),
                 .char = mangle.alias(Char, 'R'),
             },
         },
@@ -198,13 +207,12 @@ pub fn main(init: std.process.Init) !void {
 
     const exit_message = "Press 'q' + enter to quit";
 
-    // print(ansi.clear.screen, .{});
-    // defer print(ansi.clear.screen, .{});
+    print(ansi.clear.screen, .{});
+    defer print(ansi.clear.screen, .{});
 
     print(ansi.cursor.hide, .{});
     defer print(ansi.cursor.show, .{});
 
-    // if (true) return;
 
     outer: while (true) {
         try init.io.sleep(timestep, .real);
