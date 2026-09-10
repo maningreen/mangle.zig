@@ -47,7 +47,7 @@ pub const fields = struct {
 
         /// Should be read as
         /// ```zig
-        /// fn (comptime T: type, _: *T, _: *const RegistryInformation) Error!void`
+        /// fn (comptime T: type, value: *T, event: anytype, registry_info: *RegistryInformation) Error!void`
         /// ```
         pub const fields: []const Argument = &.{
             .{

@@ -79,6 +79,8 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
         var retyped: [types.len]type = undefined;
         var dropItem: [types.len]type = undefined;
         for (types, 0..) |T, i| {
+            if (@typeInfo(T) != .@"struct")
+                @compileError("Error: type '" ++ @typeName(T) ++ "' is not a structure!");
             retyped[i] = flags.Path(flags.Flatten(T));
             valueTypes[i] = Array(retyped[i]);
             dropItem[i] = Array(*retyped[i]);
