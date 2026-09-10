@@ -331,7 +331,63 @@ A system with `U` **will** match with `T.subfield` (like ownership)
 
 ### Alias(T)
 
-Alias itself isn't a flag, but uses `Dissolve(T)` internally, `Dissolve(T)`
+Alias itself isn't a flag, but uses `Dissolve(T)` internally.
+`Dissolve(T)`'s not very useful beyond `Alias(T)` (at least as far as I can tell), but is still exposed.
+
+The reason for `Alias(T)` is because of the following:
+```zig
+const Position = u32; 
+comptime {
+    std.debug.assert(Position == u32); // true
+}
+```
+
+This means that systems cannot differentiate between `Position` and `u32`.
+Thus, comes `Alias(T)`, an ergonomic alternative.
+
+Usage is as follows
+```zig
+const Position = Alias(u32, "position");
+const Velocity = Alias(u32, "velocity");
+
+comptime {
+    std.debug.assert(Position != u32);
+    std.debug.assert(Velocity != u32);
+    std.debug.assert(Position != Velocity);
+}
+
+const Object = struct {
+    position: Position,
+    velocity: Velocity,
+};
+
+const object_instance = Object{      // Alias is for when the name isn't exposed directly
+    .position = alias(Position, 30), // both are valid ways to instantiate an alias
+    .velocity = .{ .velocity = 30 }, // the field name is the string inputted
+};                                   // overall, using `alias` is recommended
+```
+
+A system might set its Signature to require a `Position`, and it won't match for a `u32`, and vice versa.
+However, when provided to the system, the types are *unwrapped* and allow direct access as following
+
+```zig
+const ApplyVelocity = struct {
+    pub const requirements: mangle.system.Signature = .{
+        .fields = &.{
+            .{ .name = "position", .type = Position },
+            .{ .name = "velocity", .type = Velocity },
+        },
+    };
+
+    pub fn process(comptime T: type, value: *T, _: anytype) {
+        comptime {
+            std.debug.assert(@FieldType(T, "position") == u32);
+            std.debug.assert(@FieldType(T, "velocity") == u32);
+        }
+        value.position += value.velocity;
+    }
+};
+```
 
 ## Docs
 
