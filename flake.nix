@@ -1,5 +1,5 @@
 {
-  description = "A simple development environent for the Fisht Fighting game";
+  description = "A simple development environent for the mangle engine";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
