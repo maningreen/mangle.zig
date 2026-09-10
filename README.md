@@ -188,7 +188,7 @@ pub const requirements: mangle.system.Signature = .{
 
 #### Type System Qualification
 
-A [Signature](#signatures) defines the fields a type, and what's fed into its [process](#processing).
+A [Signature](#signatures) defines the fields' types, and what's fed into its [process](#processing).
 
 Given the following signature, and some types, here's a list of what would / would not qualify.<br>
 Multiple items in `fields` means multiple unique fields.
