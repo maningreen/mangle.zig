@@ -1,3 +1,12 @@
+//* The mangle library is a processing engine structured around metadata tags, structure recomposition, comptime processing, and field matching.
+//*
+//* It contains the following namespaces, divided conceptually:
+//*     - [flags](#mangle.flags), behavior & relationship flags, brought up a namespace for ergonomic's sake
+//*     - [util](#mangle.util), utilities
+//*     - [system](#mangle.system) systems and qualifications
+//*
+//* It's hosted [here](https://github.com/maningreen/mangle.zig)
+
 const std = @import("std");
 const meta = std.meta;
 pub const util = @import("util.zig");
@@ -70,6 +79,8 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
         var retyped: [types.len]type = undefined;
         var dropItem: [types.len]type = undefined;
         for (types, 0..) |T, i| {
+            if (@typeInfo(T) != .@"struct")
+                @compileError("Error: type '" ++ @typeName(T) ++ "' is not a structure!");
             retyped[i] = flags.Path(flags.Flatten(T));
             valueTypes[i] = Array(retyped[i]);
             dropItem[i] = Array(*retyped[i]);
@@ -86,8 +97,11 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             /// the raw data of all the types, a tuple of @This().array
             /// recommended to not access manually
             data: DataType,
+            /// The information provided to every system
             info: RegistryInformation,
+            /// The items to append
             appendQueue: AppendType,
+            /// The items to drop
             dropQueue: DropType,
 
             pub fn init(io: std.Io, gpa: std.mem.Allocator, extra: if (ExtraInfo) |T| T else void) @This() {
@@ -164,7 +178,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 try self.append();
             }
 
-            fn getArrayFromType(self: *@This(), comptime T: type) *Array(T) {
+            pub fn getArrayFromType(self: *@This(), comptime T: type) *Array(T) {
                 const i = comptime for (allTypes, 0..) |J, i| {
                     if (T == J)
                         break i;
@@ -199,6 +213,53 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 try self.data[i].append(self.info.gpa, flags.path(&flattened).*);
             }
 
+            /// adds a top-level value to the registry after `process` is called
+            ///
+            ///> **NOTE**:
+            ///>    - see also [appendDeferred](#mangle.Registry.RegistryInformation.appendDeferred)
+            ///>    - see also [addValue](#mangle.Registry.addValue)
+            pub fn appendDeferred(self: *RegistryT, value: anytype) std.mem.Allocator.Error!void {
+                const TPrime = flags.Path(flags.Flatten(@TypeOf(value)));
+                const flattened = flags.flatten(value);
+                inline for (@typeInfo(AppendType).@"struct".fields) |field| {
+                    if (Array(TPrime) == field.type)
+                        break try @field(self.appendQueue, field.name)
+                            .append(self.gpa, flags.path(&flattened).*);
+                } else @compileError("Error: Type '" ++ @typeName(@TypeOf(value)) ++ "' is not in the registry!");
+            }
+
+            /// Removes a value in the registry. dropping is propagated upwards if value isn't top-level.
+            ///
+            ///> **NOTE**:
+            ///>    - see also [appendDeferred](#mangle.Registry.RegistryInformation.dropDeferred)
+            ///>    - `value` **must** be a pointer to a value
+            pub fn dropDeferred(self: *RegistryT, value: anytype) std.mem.Allocator!void {
+                const info = switch (@typeInfo(@TypeOf(value))) {
+                    .pointer => |p| p,
+                    else => @compileError("Error: type '" ++ @typeName(value) ++ "' is not a pointer!"),
+                };
+                const T = flags.OriginalType(info.child);
+                const i = comptime blk: {
+                    const path = flags.getPath(info.child);
+                    if (path.len > 0) {
+                        var split = std.mem.splitScalar(u8, path, flags.pathing.pathDelimiter);
+                        const uName = split.first();
+                        for (RegistryT.allTypes, 0..) |U, i| {
+                            if (util.strEql(@typeName(U), uName))
+                                break :blk i
+                            else
+                                @compileLog(@typeName(U) ++ " != " ++ uName);
+                        } else @compileError("Error: type '" ++ @typeName(@TypeOf(value)) ++ "' is not anywhere in the registry");
+                    } else {
+                        for (RegistryT.allTypes, 0..) |U, i| {
+                            if (flags.OriginalType(U) == T)
+                                break :blk i;
+                        } else @compileError("Error: type '" ++ @typeName(@TypeOf(value)) ++ "' is not anywhere in the registry");
+                    }
+                };
+                try self.dropQueue[i].append(self.gpa, @ptrCast(value));
+            }
+
             /// information provided to every system as the final argument.
             pub const RegistryInformation = struct {
                 gpa: std.mem.Allocator,
@@ -206,53 +267,30 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 delta: f32,
                 extra: (ExtraInfo orelse void),
 
-                pub fn appendDeferred(self: *RegistryInformation, value: anytype) std.mem.Allocator.Error!void {
+                /// Adds top-level item to the registry after `process` is called.
+                /// Intended for calling from systems
+                ///
+                ///> **NOTE**:
+                ///>    - see also [appendDeferred](#mangle.Registry.appendDeferred)
+                ///>    - see also [addValue](#mangle.Registry.addValue)
+                pub inline fn appendDeferred(self: *RegistryInformation, value: anytype) std.mem.Allocator.Error!void {
                     const registry: *RegistryT = @fieldParentPtr("info", self);
-
-                    const TPrime = flags.Path(flags.Flatten(@TypeOf(value)));
-                    const flattened = flags.flatten(value);
-                    inline for (@typeInfo(AppendType).@"struct".fields) |field| {
-                        if (Array(TPrime) == field.type)
-                            break try @field(registry.appendQueue, field.name)
-                                .append(self.gpa, flags.path(&flattened).*);
-                    } else @compileError("Error: Type '" ++ @typeName(@TypeOf(value)) ++ "' is not in the registry!");
+                    return registry.appendDeferred(value);
                 }
 
                 /// Given the registry information and a pointer to a type in the registry, queues it to removal.
                 /// If `value` is not owned by registry, undefined behavior.
                 pub fn dropDeferred(self: *RegistryInformation, value: anytype) std.mem.Allocator.Error!void {
-                    const info = switch (@typeInfo(@TypeOf(value))) {
-                        .pointer => |p| p,
-                        else => @compileError("Error: type '" ++ @typeName(value) ++ "' is not a pointer!"),
-                    };
-                    const T = flags.OriginalType(info.child);
                     const registry: *RegistryT = @fieldParentPtr("info", self);
-                    const i = comptime blk: {
-                        const path = flags.getPath(info.child);
-                        if (path.len > 0) {
-                            var split = std.mem.splitScalar(u8, path, flags.pathing.pathDelimiter);
-                            const uName = split.first();
-                            for (RegistryT.allTypes, 0..) |U, i| {
-                                if (util.strEql(@typeName(U), uName))
-                                    break :blk i
-                                else
-                                    @compileLog(@typeName(U) ++ " != " ++ uName);
-                            } else @compileError("Error: type '" ++ @typeName(@TypeOf(value)) ++ "' is not anywhere in the registry");
-                        } else {
-                            for (RegistryT.allTypes, 0..) |U, i| {
-                                if (flags.OriginalType(U) == T)
-                                    break :blk i;
-                            } else @compileError("Error: type '" ++ @typeName(@TypeOf(value)) ++ "' is not anywhere in the registry");
-                        }
-                    };
-                    try registry.dropQueue[i].append(self.gpa, @ptrCast(value));
+                    return registry.dropDeferred(value);
                 }
 
                 /// Emits an event to every system.
                 ///
                 /// **NOTE**:
                 ///     - Is an interrupt, other events are processed on call
-                pub fn emit(self: *RegistryInformation, eventData: anytype) !void {
+                ///     - See also, [emit](#mangle.Registry.emit)
+                pub inline fn emit(self: *RegistryInformation, eventData: anytype) !void {
                     return @as(*RegistryT, @fieldParentPtr("info", self)).emit(eventData);
                 }
             };
@@ -292,10 +330,15 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 }
             }
 
-            // / Internal function. Loops through all systems and calls `recieve` if available
+            // / Internal function. Loops through all systems and calls `receive` if available
+            /// Emits an event to every system.
+            ///
+            /// **NOTE**:
+            ///     - Is an interrupt, other events are processed on call
+            ///     - See also, [emit](#mangle.Registry.RegistryInformation.emit)
             fn emit(self: *RegistryT, event: anytype) !void {
                 inline for (systems) |Sys| {
-                    if (!@hasDecl(Sys, system.fields.recieve.name)) continue;
+                    if (!@hasDecl(Sys, system.fields.receive.name)) continue;
                     inline for (allTypes, 0..) |T, i| {
                         if (!@field(Sys, system.fields.signature.name).qualifies(T))
                             continue;
@@ -303,7 +346,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                             try applySystem(
                                 Sys,
                                 T,
-                                .recieve,
+                                .receive,
                                 true,
                                 value,
                                 .{
@@ -317,9 +360,13 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             }
 
             const RegistryT = @This();
+            /// All the systems that were requested. Includes unused systems.
             pub const systems: []const type = requestedSystems;
+            /// The internal arrays used.
             pub const arrayTypes = valueTypes;
+            /// The internal types used.
             pub const allTypes = retyped;
+            /// The original types inputted to the system.
             pub const originalTypes: []const type = types;
         };
     }

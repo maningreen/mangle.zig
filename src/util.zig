@@ -1,3 +1,5 @@
+//* General, self-contained utilities.
+
 const std = @import("std");
 
 test {
