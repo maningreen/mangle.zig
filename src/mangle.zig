@@ -224,7 +224,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 inline for (@typeInfo(AppendType).@"struct".fields) |field| {
                     if (Array(TPrime) == field.type)
                         break try @field(self.appendQueue, field.name)
-                            .append(self.gpa, flags.path(&flattened).*);
+                            .append(self.info.gpa, flags.path(&flattened).*);
                 } else @compileError("Error: Type '" ++ @typeName(@TypeOf(value)) ++ "' is not in the registry!");
             }
 

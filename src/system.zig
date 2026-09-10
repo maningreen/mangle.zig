@@ -187,9 +187,9 @@ pub fn qualifies(comptime System: type) bool {
         switch (@typeInfo(System)) {
             .@"struct" => {
                 const hasProcess = @hasDecl(System, fields.process.name);
-                const hasreceive = @hasDecl(System, fields.recieve.name);
+                const hasreceive = @hasDecl(System, fields.receive.name);
                 if (!(hasProcess or hasreceive)) return false;
-                for (&.{ .{ hasProcess, fields.process }, .{ hasreceive, fields.recieve } }) |value| {
+                for (&.{ .{ hasProcess, fields.process }, .{ hasreceive, fields.receive } }) |value| {
                     const has, const func = value;
                     if (!has) continue;
                     const funcInfo = switch (@typeInfo(@TypeOf(@field(System, func.name)))) {

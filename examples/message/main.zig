@@ -32,7 +32,7 @@ const MessageSystem = struct {
         defer stdin.close(info.io);
 
         std.debug.print("{s}", .{item.str});
-        while (reader.interface.takeByte() catch '0' != item.key) {}
+        while (reader.interface.takeByte() catch 0 != item.key) {}
     }
 };
 
