@@ -156,9 +156,10 @@ pub const Signature = struct {
                     else => field.type,
                 };
                 for (info.fieldTypes, 0..) |U, i| {
-                    switch (flags.fieldFlag(U)) {
+                    const Original = if (flags.isPathed(U)) flags.OriginalType(U) else U;
+                    switch (flags.fieldFlag(Original)) {
                         .dissolve => {
-                            if (U == Flattened) {
+                            if (Original == Flattened) {
                                 info.fieldNames[i] = field.name;
                                 info.fieldTypes[i] = flags.AliasType(U);
                                 info.fieldAttributes[i].default_value_ptr = null;
@@ -166,7 +167,7 @@ pub const Signature = struct {
                             }
                         },
                         .leaf, .owned => {
-                            if (U == Flattened) {
+                            if (Original == Flattened) {
                                 info.fieldNames[i] = field.name;
                                 info.fieldTypes[i] = field.type;
                                 continue :field;
