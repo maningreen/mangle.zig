@@ -21,15 +21,15 @@ After this, you should be able to do `@import("mangle")`
 ## Overall structure
 
 Terminology:
-    - [Registry](#registry)
-        - The top-most structure containing all data
-        - Orchestrates data and behavior
-    - [System](#systems)
-        - A structure which defines behavior
-        - [Qualification](#type-system-qualification)
-    - [Type](#types)
-        - Any type in the [Registry](#registry), fundamental data
-        - Top-level types are types stored densely.
+- [Registry](#registry)
+    - The top-most structure containing all data
+    - Orchestrates data and behavior
+- [System](#systems)
+    -  A structure which defines behavior
+    - [Qualification](#type-system-qualification)
+- [Type](#types)
+    - Any type in the [Registry](#registry), fundamental data
+    - Top-level types are types stored densely.
 
 The main type for the runtime is the `Registry()`, which contains all **top-level** types, and all systems.
 The `Registry()` can be used as a medium for [signals](#signals) and [processing](#processing).
@@ -76,13 +76,16 @@ It's asserted `my_type` is a **top-level** type, if not, a compile error is thro
 #### RegistryInformation
 
 RegistryInformation is the substructure in registry, which is supplied to every [process function](#processing), and has several functions, two main ones.
-    - `appendDeferred(self: *RegistryInformation, value: anytype)`
-    - `dropDeferred(self: *RegistryInformation, value: anytype)`
+- `appendDeferred(self: *RegistryInformation, value: anytype)`
+- `dropDeferred(self: *RegistryInformation, value: anytype)`
+- `emit(self: RegistryInformation, value: anytype)`
 
 Usage of appendDeferred is identical to that of `addValue`; however, it doesn't add the value immediately, but waits until all [system processing](#processing) is done.
 
 Usage of `dropDeferred` is slightly more complex. Given a pointer to any structure *in* the registry (top-level or not), dropping is propagated upwards until a top-level is reached.
 Dropping is appended to a queue, until [system processing](#processing) is completed, then items are removed and queues are freed.
+
+Emission is an interrupt for processing, halting until all handling is done.
 
 ## Types
 
@@ -107,20 +110,20 @@ A system is used to define behavior for types.
 The namespace for systems is `mangle.system`, for declarations see the [online docs](#docs)
 
 Terminology:
-    - [Processing](#processing)
-        - [Events](#events)
-    - [Signature](#signatures)
-        - [Qualification](#type-system-qualification)
+- [Processing](#processing)
+    - [Events](#events)
+- [Signature](#signatures)
+    - [Qualification](#type-system-qualification)
 
 ### Definition
 
 For a system to qualify as a system it must have the following declarations:
-    - requirements: [Signature](#signature)
-        - Signatures are how a system creates type specifications
-    - process: `fn (comptime T: type, value: *T, registry_information: anytype)`
-        - called on `Registry().process`
-    - receive: `fn (comptime T: type, value: *T, event: anytype, registry_information: anytype)`
-        - called on `Registry().emit`
+- requirements: [Signature](#signature)
+    - Signatures are how a system creates type specifications
+- process: `fn (comptime T: type, value: *T, registry_information: anytype)`
+    - called on `Registry().process`
+- receive: `fn (comptime T: type, value: *T, event: anytype, registry_information: anytype)`
+    - called on `Registry().emit`
 
 Having at least one of `process` and `receive` is required, having both is optional.
 
@@ -222,12 +225,12 @@ const Foo = struct  {
 }
 ```
 The following types *and fields* qualify:
-    - `T`
-    - `U`
-    - `V.subfield`
-        - `V.subfield` will be processed independently
+- `T`
+- `U`
+- `V.subfield`
+    - `V.subfield` will be processed independently from `V`
         - The process under which a substructure qualifies can be altered with [Flags](#flags)
-    - `W`
+- `W`
 
 `Foo` does *not* qualify because it doesn't contain a specified `[]const u32`
 
@@ -257,10 +260,10 @@ The following relationships could all be possible:
 If there're any more relationships I missed, please make an [issue](https://github.com/maningreen/mangle.zig/issues)
 
 There's a **flag** for each of these cases, respectively:
-    - [Own(T)](#ownt)
-    - [Compose(T)](#composet)
-    - [Leaf(T)](#leaft)
-    - [Alias(T)](#aliast)
+- [Own(T)](#ownt)
+- [Compose(T)](#composet)
+- [Leaf(T)](#leaft)
+- [Alias(T)](#aliast)
 
 ### Own(T)
 
