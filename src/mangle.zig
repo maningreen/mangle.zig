@@ -164,15 +164,16 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 inline for (allTypes) |T| {
                     const arr = self.getArrayFromType(T);
                     inline for (systems) |Sys|
-                        for (arr.items) |*value|
-                            try applySystem(
-                                Sys,
-                                T,
-                                .process,
-                                false,
-                                value,
-                                .{&self.info},
-                            );
+                        if (system.hasProcess(Sys))
+                            for (arr.items) |*value|
+                                try applySystem(
+                                    Sys,
+                                    T,
+                                    .process,
+                                    false,
+                                    value,
+                                    .{&self.info},
+                                );
                 }
                 self.drop();
                 try self.append();
@@ -337,25 +338,19 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             ///     - Is an interrupt, other events are processed on call
             ///     - See also, [emit](#mangle.Registry.RegistryInformation.emit)
             fn emit(self: *RegistryT, event: anytype) !void {
-                inline for (systems) |Sys| {
-                    if (!@hasDecl(Sys, system.fields.receive.name)) continue;
-                    inline for (allTypes, 0..) |T, i| {
-                        if (!@field(Sys, system.fields.signature.name).qualifies(T))
-                            continue;
-                        for (self.data[i].items) |*value| {
-                            try applySystem(
-                                Sys,
-                                T,
-                                .receive,
-                                true,
-                                value,
-                                .{
-                                    event,
-                                    self.info,
-                                },
-                            );
-                        }
-                    }
+                inline for (allTypes) |T| {
+                    const arr = self.getArrayFromType(T);
+                    inline for (systems) |Sys|
+                        if (system.hasRecieve(Sys))
+                            for (arr.items) |*value|
+                                try applySystem(
+                                    Sys,
+                                    T,
+                                    .process,
+                                    false,
+                                    value,
+                                    .{ event, &self.info },
+                                );
                 }
             }
 
