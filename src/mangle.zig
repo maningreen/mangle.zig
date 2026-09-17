@@ -341,12 +341,12 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 inline for (allTypes) |T| {
                     const arr = self.getArrayFromType(T);
                     inline for (systems) |Sys|
-                        if (system.hasRecieve(Sys))
+                        if (system.hasReceive(Sys))
                             for (arr.items) |*value|
                                 try applySystem(
                                     Sys,
                                     T,
-                                    .process,
+                                    .receive,
                                     false,
                                     value,
                                     .{ event, &self.info },

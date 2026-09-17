@@ -188,7 +188,7 @@ pub fn qualifies(comptime System: type) bool {
         switch (@typeInfo(System)) {
             .@"struct" => {
                 const hasProc = hasProcess(System);
-                const hasreceive = hasRecieve(System);
+                const hasreceive = hasReceive(System);
                 if (!(hasProc or hasreceive)) return false;
                 for (&.{ .{ hasProc, fields.process }, .{ hasreceive, fields.receive } }) |value| {
                     const has, const func = value;
@@ -215,7 +215,7 @@ pub fn qualifies(comptime System: type) bool {
     }
 }
 
-pub inline fn hasRecieve(comptime Sys: type) bool {
+pub inline fn hasReceive(comptime Sys: type) bool {
     comptime {
         return @hasDecl(Sys, fields.receive.name);
     }
