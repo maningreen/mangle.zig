@@ -138,6 +138,24 @@ pub const Signature = struct {
         }
     }
 
+    /// Given a structure type `T` generates a signature from it.
+    pub fn fromStruct(comptime T: type) Signature {
+        comptime {
+            const info = switch (@typeInfo(T)) {
+                .@"struct" => |i| i,
+                else => @compileError("Error: Type '" ++ @typeName(T) ++ "' is not a struct!"),
+            };
+            var collectFields: [info.fields.len]Item = undefined;
+            for (info.fields, 0..) |value, i| {
+                collectFields[i] = .{ .name = value.name, .type = value.type };
+            }
+            const U = struct {
+                const fields: [info.fields.len]Item = collectFields;
+            };
+            return .{ .fields = &U.fields };
+        }
+    }
+
     const voidValue: void = void{};
 
     /// Returns the inputed structure with names according to the fields
