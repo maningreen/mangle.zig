@@ -61,10 +61,13 @@ const ReplicatingBounce = struct {
 
 const DrawParticle = struct {
     pub const requirements =
-        mangle.system.Signature{ .fields = &.{
-            .{ .name = "pos", .type = Position },
-            .{ .name = "char", .type = Char },
-        } };
+        // use fromStruct() in order to make it easier to read
+        mangle.system.Signature.fromStruct(
+            struct {
+                pos: Position,
+                char: Char,
+            },
+        );
 
     pub fn process(comptime T: type, value: *T, _: anytype) !void {
         value.pos.add(world_border.pos).draw(&.{value.char});
