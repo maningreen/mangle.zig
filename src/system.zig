@@ -149,7 +149,10 @@ pub const Signature = struct {
             for (info.fields, 0..) |value, i| {
                 collectFields[i] = .{ .name = value.name, .type = value.type };
             }
-            return .{ .fields = collectFields };
+            const U = struct {
+                const fields: [info.fields.len]Item = collectFields;
+            };
+            return .{ .fields = &U.fields };
         }
     }
 

@@ -60,12 +60,11 @@ const ReplicatingBounce = struct {
 };
 
 const DrawParticle = struct {
-    pub const requirements: mangle.system.Signature = .{
-        .fields = &.{
+    pub const requirements =
+        mangle.system.Signature{ .fields = &.{
             .{ .name = "pos", .type = Position },
             .{ .name = "char", .type = Char },
-        },
-    };
+        } };
 
     pub fn process(comptime T: type, value: *T, _: anytype) !void {
         value.pos.add(world_border.pos).draw(&.{value.char});
@@ -212,7 +211,6 @@ pub fn main(init: std.process.Init) !void {
 
     print(ansi.cursor.hide, .{});
     defer print(ansi.cursor.show, .{});
-
 
     outer: while (true) {
         try init.io.sleep(timestep, .real);
