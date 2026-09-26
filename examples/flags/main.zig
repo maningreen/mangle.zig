@@ -49,6 +49,7 @@ const ReplicatingWrap = struct {
 const BouncingParticle = struct {
     particle: mangle.Compose(Particle),
     bounce: Bounce = .{ .bounce = void{} },
+    testField: u32 = 30,
 };
 
 const ReplicatingBounce = struct {

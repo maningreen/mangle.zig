@@ -84,8 +84,25 @@ pub const Signature = struct {
 
         /// Used for systems to use dot syntax access
         /// Ignored in qualifications
-        /// See, also [NamedType](#mangled.system.Signature.NamedType)
+        /// See, also [NamedType](#mangle.system.Signature.NamedType)
         name: []const u8,
+
+        /// Used for matching
+        /// `.required` is default behavior,
+        /// for other behaviors see [Status](#mangle.system.Signature.Item.Status)
+        status: Status = .required,
+
+        pub const Status = enum {
+            /// Default behavior:
+            /// Item is necessary to match
+            required,
+            /// Item isn't required, but will be named
+            /// check with `@hasField()`
+            optional,
+            /// Item will never be matched with.
+            /// If the field is present, matching fails
+            excluded,
+        };
     };
 
     /// Requirements
@@ -101,6 +118,8 @@ pub const Signature = struct {
             };
 
             for (self.fields) |requirement| {
+                if (requirement.status == .optional) continue;
+
                 const U = switch (@typeInfo(requirement.type)) {
                     .@"struct" => flags.Flatten(requirement.type),
                     else => requirement.type,
@@ -110,23 +129,16 @@ pub const Signature = struct {
                         .composed => unreachable,
                         else => {
                             const Original = if (flags.isPathed(field.type)) flags.OriginalType(field.type) else field.type;
-                            switch (flags.fieldFlag(requirement.type)) {
-                                .owned => {
-                                    if (U == Original or flags.Leaf(U) == Original) {
-                                        break;
-                                    }
-                                },
-                                .leaf => {
-                                    if (U == Original) {
-                                        break;
-                                    }
-                                },
-                                .dissolve => {
-                                    if (U == Original) {
-                                        break;
-                                    }
-                                },
+                            const contains = switch (flags.fieldFlag(requirement.type)) {
+                                .owned => U == Original or flags.Leaf(U) == Original,
+                                .leaf => U == Original,
+                                .dissolve => U == Original,
                                 .composed => unreachable,
+                            };
+                            switch (requirement.status) {
+                                .required => if (contains) break,
+                                .excluded => if (contains) return false,
+                                else => unreachable,
                             }
                         },
                     }
