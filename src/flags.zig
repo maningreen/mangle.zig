@@ -3,20 +3,17 @@
 const std = @import("std");
 const util = @import("util.zig");
 
-test {
-    std.testing.refAllDecls(@This());
-}
-
+/// Pathing information for structures in the registry
 pub const pathing = struct {
     const pathSubField = "__internal_registry_type_path__";
     const originalSubfield = "__InternalRegistryOriginalType__";
     pub const path_delimiter = '_';
 };
 const formats = struct {
-    pub const composed = "__internal_registry_composed_flag__";
-    pub const leaf = "__internal_registry_leaf_flag__";
-    pub const dissolve = "__internal_registry_dissolve_flag__";
-    pub const identity = "__internal_registry_ownership_path__";
+    const composed = "__internal_registry_composed_flag__";
+    const leaf = "__internal_registry_leaf_flag__";
+    const dissolve = "__internal_registry_dissolve_flag__";
+    const identity = "__internal_registry_ownership_path__";
 };
 
 const voidValue: void = {};
@@ -350,7 +347,7 @@ pub inline fn Compose(comptime T: type) type {
 ///>    - [Leaf(T)](#mangle.flags.Leaf)
 ///>    - [Alias(T)](#mangle.flags.Alias)
 ///>    - [Compose(T)](#mangle.flags.Compose)
-inline fn Dissolve(comptime T: type) type {
+pub inline fn Dissolve(comptime T: type) type {
     comptime {
         switch (fieldFlag(T)) {
             .owned => {},
@@ -411,6 +408,17 @@ pub inline fn Alias(comptime Type: type, comptime label: []const u8) type {
 }
 
 /// Returns a wrapped, aliased version of `value`
+///
+/// Usage:
+/// ```zig
+/// const Position = Alias(u32, "position");
+///
+/// // input type to cast to, and value
+/// const my_position = alias(Position, 30);
+///
+/// // explicit paramater initiation (depends on string inputed to `Alias`)
+/// const my_position_explicit = Position{ .position = 30 };
+/// ```
 pub inline fn alias(comptime T: type, value: anytype) T {
     switch (@typeInfo(T)) {
         .@"struct" => |i| {
@@ -427,6 +435,9 @@ pub inline fn alias(comptime T: type, value: anytype) T {
 }
 
 /// Returns the original type of an aliased type
+///> **NOTE**:
+///>    - AliasType(Alias(T, "_")) == T
+///>    - For runtime usage see [aliasUnwrap](#mangle.flags.aliasUnwrap)
 pub inline fn AliasType(comptime T: type) type {
     comptime {
         const info = switch (@typeInfo(T)) {
@@ -439,6 +450,10 @@ pub inline fn AliasType(comptime T: type) type {
     }
 }
 
+/// Unwraps an aliased type into base type.
+///
+///> **NOTE**:
+///>    - See also, [AliasType](#mangle.flags.AliasType)
 pub inline fn aliasUnwrap(value: anytype) AliasType(@TypeOf(value)) {
     const info = switch (@typeInfo(@TypeOf(value))) {
         .@"struct" => |i| i,

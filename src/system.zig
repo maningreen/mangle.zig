@@ -96,8 +96,8 @@ pub const Signature = struct {
             /// Default behavior:
             /// Item is necessary to match
             required,
-            /// Item isn't required, but will be named
-            /// check with `@hasField()`
+            /// Item isn't required, but will be named if present
+            /// check with `@hasField()` for presence
             optional,
             /// Item will never be matched with.
             /// If the field is present, matching fails
@@ -151,6 +151,7 @@ pub const Signature = struct {
     }
 
     /// Given a structure type `T` generates a signature from it.
+    /// Status for all fields is `required`
     pub fn fromStruct(comptime T: type) Signature {
         comptime {
             const info = switch (@typeInfo(T)) {
@@ -245,12 +246,14 @@ pub fn qualifies(comptime System: type) bool {
     }
 }
 
+/// returns whether or not `Sys` has a declaration named [fields.receive.name](#mangle.system.fields.receive.name)
 pub inline fn hasReceive(comptime Sys: type) bool {
     comptime {
         return @hasDecl(Sys, fields.receive.name);
     }
 }
 
+/// returns whether or not `Sys` has a declaration named [fields.process.name](#mangle.system.fields.process.name)
 pub inline fn hasProcess(comptime Sys: type) bool {
     comptime {
         return @hasDecl(Sys, fields.process.name);

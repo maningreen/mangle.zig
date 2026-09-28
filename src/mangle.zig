@@ -2,10 +2,10 @@
 //*
 //* It contains the following namespaces, divided conceptually:
 //*     - [flags](#mangle.flags), behavior & relationship flags, brought up a namespace for ergonomic's sake
-//*     - [util](#mangle.util), utilities
+//*     - [util](#mangle.util), underlying utilities
 //*     - [system](#mangle.system) systems and qualifications
 //*
-//* It's hosted [here](https://github.com/maningreen/mangle.zig)
+//* It's hosted [here](https://github.com/maningreen/mangle.zig), with documentation [here](https://maningreen.github.io/mangle.zig)
 
 const std = @import("std");
 const meta = std.meta;
@@ -68,7 +68,7 @@ inline fn applySystem(comptime Sys: type, comptime T: type, comptime function: @
     );
 }
 
-/// `types` should be all the types the registry will utilize,
+/// `types` should be all the types the registry will utilize at the top level,
 /// `types` *will not* be infered by systems.
 pub fn Registry(comptime types: []const type, comptime requestedSystems: []const type, comptime ExtraInfo: ?type) type {
     // we do a lot of comptime recursion (which is an issue to optimize)
@@ -335,9 +335,9 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             /// Emits an event to every system.
             ///
             /// **NOTE**:
-            ///     - Is an interrupt, other events are processed on call
+            ///     - Is an interrupt, if called in `process`, the event will happen
             ///     - See also, [emit](#mangle.Registry.RegistryInformation.emit)
-            fn emit(self: *RegistryT, event: anytype) !void {
+            pub fn emit(self: *RegistryT, event: anytype) !void {
                 inline for (allTypes) |T| {
                     const arr = self.getArrayFromType(T);
                     inline for (systems) |Sys|
