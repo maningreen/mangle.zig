@@ -1,4 +1,4 @@
-//* Flags for inter-structure relations.
+//! Flags for inter-structure relations.
 
 const std = @import("std");
 const util = @import("util.zig");

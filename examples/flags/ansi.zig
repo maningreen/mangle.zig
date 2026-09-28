@@ -1,6 +1,6 @@
-//* This file contains ansi escape sequences
-//* Do note, most of this was created by AI (and with that case is the exception)
-//* It has been manually edited.
+//! This file contains ansi escape sequences
+//! Do note, most of this was created by AI (and with that case is the exception)
+//! It has been manually edited.
 
 pub const clear = struct {
     pub const screen = "\x1b[2J";

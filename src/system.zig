@@ -1,8 +1,8 @@
-//* The definition and implementations of systems<br>
-//* A system requires:
-//*     - `requirements: Signature`
-//*     - `process: fn` and/or `receive: fn`
-//* In order to qualify
+//! The definition and implementations of systems<br>
+//! A system requires:
+//!     - `requirements: Signature`
+//!     - `process: fn` and/or `receive: fn`
+//! In order to qualify
 
 const std = @import("std");
 const meta = std.meta;

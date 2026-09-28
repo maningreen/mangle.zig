@@ -1,11 +1,11 @@
-//* The mangle library is a processing engine structured around metadata tags, structure recomposition, comptime processing, and field matching.
-//*
-//* It contains the following namespaces, divided conceptually:
-//*     - [flags](#mangle.flags), behavior & relationship flags, brought up a namespace for ergonomic's sake
-//*     - [util](#mangle.util), underlying utilities
-//*     - [system](#mangle.system) systems and qualifications
-//*
-//* It's hosted [here](https://github.com/maningreen/mangle.zig), with documentation [here](https://maningreen.github.io/mangle.zig)
+//! The mangle library is a processing engine structured around metadata tags, structure recomposition, comptime processing, and field matching.
+//!
+//! It contains the following namespaces, divided conceptually:
+//!     - [flags](#mangle.flags), behavior & relationship flags, brought up a namespace for ergonomic's sake
+//!     - [util](#mangle.util), underlying utilities
+//!     - [system](#mangle.system) systems and qualifications
+//!
+//! It's hosted [here](https://github.com/maningreen/mangle.zig), with documentation [here](https://maningreen.github.io/mangle.zig)
 
 const std = @import("std");
 const meta = std.meta;

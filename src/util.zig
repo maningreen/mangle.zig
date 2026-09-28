@@ -1,4 +1,4 @@
-//* General, self-contained utilities.
+//! General, self-contained utilities.
 
 const std = @import("std");
 

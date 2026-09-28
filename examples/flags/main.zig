@@ -1,5 +1,5 @@
-//* This is an example for the mangle.Compose(T), with a particle system
-//* It also contains `mangle.Alias(T)`
+//! This is an example for the mangle.Compose(T), with a particle system
+//! It also contains `mangle.Alias(T)`
 
 const std = @import("std");
 const mangle = @import("mangle");
