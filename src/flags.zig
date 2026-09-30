@@ -81,18 +81,16 @@ pub fn ApplyMetadata(comptime T: type, name: []const u8) type {
 ///> - `Leaf(T)` where `@typeInfo(T) != .@"struct"` is identity
 ///> -  [See also `Compose`](#mangle.flags.Compose)
 ///> -  TODO: allow 'unwrapping'
-pub inline fn Leaf(comptime T: type) type {
-    comptime {
-        switch (@typeInfo(T)) {
-            .@"struct" => {
-                if (fieldFlag(T) != .owned)
-                    @compileError("Error type '" ++ @typeName(T) ++ "'Already has metadata flag!");
-                return ApplyMetadata(T, formats.leaf);
-            },
-            else => {
-                if (@typeInfo(T) != .@"struct") return T;
-            },
-        }
+pub fn Leaf(comptime T: type) type {
+    switch (@typeInfo(T)) {
+        .@"struct" => {
+            if (fieldFlag(T) != .owned)
+                @compileError("Error type '" ++ @typeName(T) ++ "' Already has metadata flag!");
+            return ApplyMetadata(T, formats.leaf);
+        },
+        else => {
+            if (@typeInfo(T) != .@"struct") return T;
+        },
     }
 }
 
@@ -102,7 +100,7 @@ pub inline fn Leaf(comptime T: type) type {
 ///> - can be omitted with no semantic differences
 ///> - Intended for explicit ownership for readability
 ///> - `Own(T) == T`
-pub inline fn Own(comptime T: type) type {
+pub fn Own(comptime T: type) type {
     comptime {
         switch (fieldFlag(T)) {
             .composed, .leaf => @compileError("Error, type '" ++ @typeName(T) ++ "' Is already marked as" ++ @tagName(fieldFlag(T))),
@@ -171,7 +169,7 @@ pub fn Reduce(comptime T: type, comptime flag: Flags) type {
         for (deconstructed.fieldTypes, 0..) |V, i| {
             if (@typeInfo(V) == .@"struct") {
                 if (deconstructed.fieldAttributes[i].default_value_ptr) |p| {
-                    const reducedPtr = reduce(@as(*const V, @alignCast(@ptrCast(p))).*, flag);
+                    const reducedPtr = reduce(@as(*const V, @ptrCast(@alignCast(p))).*, flag);
                     const W = struct {
                         const value: @TypeOf(reducedPtr) = reducedPtr;
                     };
@@ -236,7 +234,7 @@ pub fn reduce(value: anytype, comptime flag: Flags) Reduce(@TypeOf(value), flag)
                     }
                 } else {
                     const reduced = reduce(@field(value, field.name), flag);
-                    if (fieldFlag(field.type) == flag) {
+                    if (comptime fieldFlag(field.type) == flag) {
                         inline for (@typeInfo(@TypeOf(reduced)).@"struct".fields) |subField| {
                             if (@hasField(Return, subField.name))
                                 @field(ret, subField.name) = @field(reduced, subField.name)
@@ -267,18 +265,15 @@ pub fn isFlagFormat(str: []const u8) bool {
 /// Looks at fields for metadata
 /// If not `@typeInfo(T) == .@"struct"`
 /// returns .leaf
-pub inline fn fieldFlag(comptime T: type) Flags {
-    comptime {
-        const info = switch (@typeInfo(T)) {
-            .@"struct" => |i| i,
-            else => return .leaf,
-        };
-        for (&.{ .leaf, .composed, .dissolve }) |flag| {
-            const flagMeta = @field(formats, @tagName(flag));
-            for (info.fields) |field|
-                if (std.mem.eql(u8, flagMeta, field.name)) return flag;
-        } else return .owned;
+pub fn fieldFlag(comptime T: type) Flags {
+    switch (@typeInfo(T)) {
+        .@"struct" => {},
+        else => return .leaf,
     }
+    inline for (&.{ .leaf, .composed, .dissolve }) |flag| {
+        const flagMeta = @field(formats, @tagName(flag));
+        if (@hasField(T, flagMeta)) return flag;
+    } else return .owned;
 }
 
 /// Applies the `.compose` flag to a type
@@ -305,7 +300,7 @@ pub inline fn fieldFlag(comptime T: type) Flags {
 ///     - [Flags](#mangle.flags.Flags)
 ///     - [Own(T)](#mangle.flags.Own)
 ///     - [Leaf(T)](#mangle.flags.Leaf)
-pub inline fn Compose(comptime T: type) type {
+pub fn Compose(comptime T: type) type {
     comptime {
         switch (fieldFlag(T)) {
             .owned => {},
@@ -347,7 +342,7 @@ pub inline fn Compose(comptime T: type) type {
 ///>    - [Leaf(T)](#mangle.flags.Leaf)
 ///>    - [Alias(T)](#mangle.flags.Alias)
 ///>    - [Compose(T)](#mangle.flags.Compose)
-pub inline fn Dissolve(comptime T: type) type {
+pub fn Dissolve(comptime T: type) type {
     comptime {
         switch (fieldFlag(T)) {
             .owned => {},
@@ -383,7 +378,7 @@ pub inline fn Dissolve(comptime T: type) type {
 ///> **NOTE**
 /// Works for any type, ensure `label` is unique.
 /// `label` will be the name of the field, and is of type `T`
-pub inline fn Alias(comptime Type: type, comptime label: []const u8) type {
+pub fn Alias(comptime Type: type, comptime label: []const u8) type {
     comptime {
         const T = @Struct(
             .auto,
@@ -419,7 +414,7 @@ pub inline fn Alias(comptime Type: type, comptime label: []const u8) type {
 /// // explicit paramater initiation (depends on string inputed to `Alias`)
 /// const my_position_explicit = Position{ .position = 30 };
 /// ```
-pub inline fn alias(comptime T: type, value: anytype) T {
+pub fn alias(comptime T: type, value: anytype) T {
     switch (@typeInfo(T)) {
         .@"struct" => |i| {
             var ret: T = undefined;
@@ -438,7 +433,7 @@ pub inline fn alias(comptime T: type, value: anytype) T {
 ///> **NOTE**:
 ///>    - AliasType(Alias(T, "_")) == T
 ///>    - For runtime usage see [aliasUnwrap](#mangle.flags.aliasUnwrap)
-pub inline fn AliasType(comptime T: type) type {
+pub fn AliasType(comptime T: type) type {
     comptime {
         const info = switch (@typeInfo(T)) {
             .@"struct" => |i| i,
@@ -454,7 +449,7 @@ pub inline fn AliasType(comptime T: type) type {
 ///
 ///> **NOTE**:
 ///>    - See also, [AliasType](#mangle.flags.AliasType)
-pub inline fn aliasUnwrap(value: anytype) AliasType(@TypeOf(value)) {
+pub fn aliasUnwrap(value: anytype) AliasType(@TypeOf(value)) {
     const info = switch (@typeInfo(@TypeOf(value))) {
         .@"struct" => |i| i,
         else => @compileError("Error: type '" ++ @typeName(@TypeOf(value)) ++ "' is not a struct!"),
@@ -484,7 +479,7 @@ pub fn Erode(comptime T: type) type {
 ///     - [Dissolve(T)](#mangle.flags.Dissolve)
 ///
 /// For a type version, see [Erode](#mangle.flags.Erode)
-pub inline fn erode(value: anytype) Erode(@TypeOf(value)) {
+pub fn erode(value: anytype) Erode(@TypeOf(value)) {
     const T = @TypeOf(value);
     const TPrime = Erode(T);
     if (util.layoutEql(T, TPrime)) {
@@ -500,7 +495,7 @@ pub inline fn erode(value: anytype) Erode(@TypeOf(value)) {
 /// For more information see: [Compose(T)](#mangle.flags.Compose)
 ///
 /// For a runtime version, see [flatten](#mangle.flags.flatten)
-pub inline fn Flatten(comptime T: type) type {
+pub fn Flatten(comptime T: type) type {
     comptime {
         return Reduce(T, .composed);
     }
@@ -511,7 +506,7 @@ pub inline fn Flatten(comptime T: type) type {
 /// For more information see: [Compose(T)](#mangle.flags.Compose)
 ///
 /// For a type version, see [Flatten](#mangle.flags.Flatten)
-pub inline fn flatten(value: anytype) Flatten(@TypeOf(value)) {
+pub fn flatten(value: anytype) Flatten(@TypeOf(value)) {
     return reduce(value, .composed);
 }
 
@@ -519,13 +514,11 @@ pub inline fn flatten(value: anytype) Flatten(@TypeOf(value)) {
 ///
 ///> **NOTE**
 ///> - see also [path](#mangle.flags.path)
-pub inline fn Path(comptime T: type) type {
-    comptime {
-        return PathInternal(T, "");
-    }
+pub fn Path(comptime T: type) type {
+    return PathInternal(T, "");
 }
 
-inline fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
+fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
     comptime {
         switch (@typeInfo(T)) {
             .@"struct" => void{},
@@ -569,7 +562,7 @@ pub fn path(value: anytype) util.PtrReinterpret(@TypeOf(value), Path(@typeInfo(@
 
 /// Returns the type path relative to a registry top level
 /// String is delimited with `.` between each parent
-pub inline fn getPath(comptime T: type) []const u8 {
+pub fn getPath(comptime T: type) []const u8 {
     comptime {
         _ = switch (@typeInfo(T)) {
             .@"struct" => |i| i,
@@ -582,29 +575,25 @@ pub inline fn getPath(comptime T: type) []const u8 {
     }
 }
 
-pub inline fn OriginalType(comptime T: type) type {
-    comptime {
-        _ = switch (@typeInfo(T)) {
-            .@"struct" => |i| i,
-            else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
-        };
-
-        if (@hasField(T, formats.identity)) {
-            return @field(@FieldType(T, formats.identity), pathing.originalSubfield);
-        } else @compileError("Error: '" ++ @typeName(T) ++ "' is not pathed!");
+pub fn OriginalType(comptime T: type) type {
+    switch (@typeInfo(T)) {
+        .@"struct" => {},
+        else => return T,
     }
+
+    if (@hasField(T, formats.identity)) {
+        return @field(@FieldType(T, formats.identity), pathing.originalSubfield);
+    } else @compileError("Error: '" ++ @typeName(T) ++ "' is not pathed!");
 }
 
-pub inline fn isPathed(comptime T: type) bool {
-    comptime {
-        return switch (@typeInfo(T)) {
-            .@"struct" => @hasField(T, formats.identity),
-            else => false,
-        };
-    }
+pub fn isPathed(comptime T: type) bool {
+    return comptime switch (@typeInfo(T)) {
+        .@"struct" => @hasField(T, formats.identity),
+        else => false,
+    };
 }
 
-pub inline fn aliasName(comptime T: type) [:0]const u8 {
+pub fn aliasName(comptime T: type) [:0]const u8 {
     comptime {
         const info = switch (@typeInfo(T)) {
             .@"struct" => |i| i,

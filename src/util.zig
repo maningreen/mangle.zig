@@ -50,14 +50,14 @@ pub fn DeStructInfo(count: comptime_int) type {
 
         /// Constructs a struct with `@Struct` according to fields
         /// [See also ConstructExtra](#mangle.util.DeStructInfo.ConstructExtra)
-        pub inline fn Construct(comptime self: @This()) type {
+        pub fn Construct(comptime self: @This()) type {
             return self.ConstructExtra(.auto, null);
         }
 
         /// Constructs a struct with `@Struct` according to fields
         /// allows for extra options passed in
         /// [See also ](#mangle.Util.DeStructInfo.Construct)
-        pub inline fn ConstructExtra(comptime self: @This(), layout: std.builtin.Type.ContainerLayout, backing: ?type) type {
+        pub fn ConstructExtra(comptime self: @This(), layout: std.builtin.Type.ContainerLayout, backing: ?type) type {
             var defaultCount: comptime_int = 0;
             for (self.fieldAttributes) |attr| {
                 if (attr.default_value_ptr) |_| defaultCount += 1;
@@ -91,7 +91,7 @@ pub fn DeStructInfo(count: comptime_int) type {
     };
 }
 
-pub inline fn deStruct(comptime T: type) DeStructInfo(@typeInfo(T).@"struct".fields.len) {
+pub fn deStruct(comptime T: type) DeStructInfo(@typeInfo(T).@"struct".fields.len) {
     comptime {
         const info = switch (@typeInfo(T)) {
             .@"struct" => |i| i,
@@ -114,7 +114,7 @@ pub inline fn deStruct(comptime T: type) DeStructInfo(@typeInfo(T).@"struct".fie
 ///
 ///> **NOTE**:
 ///> - See also [deStruct](#mangle.util.deStruct)
-pub inline fn deStructLayout(comptime T: type) DeStructInfo(@typeInfo(T).@"struct".fields.len) {
+pub fn deStructLayout(comptime T: type) DeStructInfo(@typeInfo(T).@"struct".fields.len) {
     comptime {
         const info = switch (@typeInfo(T)) {
             .@"struct" => |i| i,
@@ -151,7 +151,7 @@ pub inline fn deStructLayout(comptime T: type) DeStructInfo(@typeInfo(T).@"struc
     }
 }
 
-pub inline fn strEql(a: []const u8, b: []const u8) bool {
+pub fn strEql(a: []const u8, b: []const u8) bool {
     return std.mem.eql(u8, a, b);
 }
 
@@ -159,7 +159,7 @@ pub inline fn strEql(a: []const u8, b: []const u8) bool {
 ///
 ///> **WARNING**:
 ///> - does not (yet) cover pointers and substructure fields
-pub inline fn structEql(a: anytype, b: @TypeOf(a)) bool {
+pub fn structEql(a: anytype, b: @TypeOf(a)) bool {
     const T = @TypeOf(a);
     std.debug.assert(@typeInfo(T) == .@"struct");
     const tInfo = comptime @typeInfo(T).@"struct";
@@ -181,7 +181,7 @@ pub inline fn structEql(a: anytype, b: @TypeOf(a)) bool {
 ///
 ///> **COMPILE ERRORS**
 ///> - targets[n] is not to a sub-structure field
-pub inline fn Decompose(comptime T: type, targets: []const std.meta.FieldEnum(T)) type {
+pub fn Decompose(comptime T: type, targets: []const std.meta.FieldEnum(T)) type {
     comptime {
         if (targets.len == 0) return T;
         const info = switch (@typeInfo(T)) {
@@ -235,7 +235,7 @@ pub inline fn Decompose(comptime T: type, targets: []const std.meta.FieldEnum(T)
 ///> **NOTE**:
 ///> - runtime overhead
 ///> - See also [Decompose](#mangle.util.Decompose)
-pub inline fn decompose(
+pub fn decompose(
     value: anytype,
     comptime targets: []const std.meta.FieldEnum(@TypeOf(value)),
 ) Decompose(@TypeOf(value), targets) {
@@ -271,7 +271,7 @@ pub inline fn decompose(
 }
 
 /// Given a string, returns an enum literal
-pub inline fn strToEnum(comptime T: type, comptime str: []const u8) T {
+pub fn strToEnum(comptime T: type, comptime str: []const u8) T {
     comptime {
         for (std.enums.values(T)) |tag| {
             if (strEql(@tagName(tag), str))
@@ -283,7 +283,7 @@ pub inline fn strToEnum(comptime T: type, comptime str: []const u8) T {
 /// Given an In pointer, is reinterpreted into an Element type,
 ///> **NOTE**:
 ///> - Asserts sizes and alignments are the same, otherwise a compile error will be emitted
-pub inline fn PtrReinterpret(comptime In: type, comptime Element: type) type {
+pub fn PtrReinterpret(comptime In: type, comptime Element: type) type {
     comptime {
         const inInfo = switch (@typeInfo(In)) {
             .pointer => |i| i,
@@ -307,7 +307,7 @@ pub inline fn PtrReinterpret(comptime In: type, comptime Element: type) type {
 }
 
 /// Given type T and U, checks if the memory layout's the same.
-pub inline fn layoutEql(comptime T: type, comptime U: type) bool {
+pub fn layoutEql(comptime T: type, comptime U: type) bool {
     comptime {
         // const sortedT = deStructLayout(T);
         // const sortedU = deStructLayout(U);

@@ -25,7 +25,14 @@ test {
     std.testing.refAllDecls(@This());
 }
 
-inline fn applySystem(comptime Sys: type, comptime T: type, comptime function: @EnumLiteral(), comptime inlined: bool, value: *T, extraArgs: anytype) !void {
+fn applySystem(
+    comptime Sys: type,
+    comptime T: type,
+    comptime function: @EnumLiteral(),
+    comptime inlined: bool,
+    value: *T,
+    extraArgs: anytype,
+) !void {
     const info = switch (@typeInfo(T)) {
         .@"struct" => |i| i,
         else => @compileError("Error: Type '" ++ @typeName(T) ++ "' is not a struct!"),
@@ -34,18 +41,21 @@ inline fn applySystem(comptime Sys: type, comptime T: type, comptime function: @
     inline for (info.fields) |field| {
         switch (@typeInfo(field.type)) {
             .@"struct" => {
-                switch (flags.fieldFlag(field.type)) {
+                switch (comptime flags.fieldFlag(field.type)) {
                     .owned => {
-                        comptime if (@typeInfo(field.type) != .@"struct") continue;
-
-                        try applySystem(
-                            Sys,
-                            field.type,
-                            function,
-                            inlined,
-                            &@field(value, field.name),
-                            extraArgs,
-                        );
+                        switch (@typeInfo(field.type)) {
+                            .@"struct" => {
+                                try applySystem(
+                                    Sys,
+                                    field.type,
+                                    function,
+                                    inlined,
+                                    &@field(value, field.name),
+                                    extraArgs,
+                                );
+                            },
+                            else => {},
+                        }
                     },
                     .leaf, .dissolve => continue,
                     else => unreachable,
@@ -55,7 +65,7 @@ inline fn applySystem(comptime Sys: type, comptime T: type, comptime function: @
         }
     }
 
-    if (!@field(Sys, system.fields.signature.name).qualifies(T)) return;
+    if (comptime !@field(Sys, system.fields.signature.name).qualifies(T)) return;
 
     const Named = @field(Sys, system.fields.signature.name).NamedType(T);
     comptime {
@@ -134,7 +144,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             }
 
             /// asserts `value` is a top-level field, and a pointer
-            inline fn itemDeinit(self: *RegistryT, value: anytype) void {
+            fn itemDeinit(self: *RegistryT, value: anytype) void {
                 const T: type = @TypeOf(value);
                 const info = switch (@typeInfo(T)) {
                     .pointer => |i| i,
@@ -247,9 +257,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                         const uName = split.first();
                         for (RegistryT.allTypes, 0..) |U, i| {
                             if (util.strEql(@typeName(U), uName))
-                                break :blk i
-                            else
-                                @compileLog(@typeName(U) ++ " != " ++ uName);
+                                break :blk i;
                         } else @compileError("Error: type '" ++ @typeName(@TypeOf(value)) ++ "' is not anywhere in the registry");
                     } else {
                         for (RegistryT.allTypes, 0..) |U, i| {
@@ -274,7 +282,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 ///> **NOTE**:
                 ///>    - see also [appendDeferred](#mangle.Registry.appendDeferred)
                 ///>    - see also [addValue](#mangle.Registry.addValue)
-                pub inline fn appendDeferred(self: *RegistryInformation, value: anytype) std.mem.Allocator.Error!void {
+                pub fn appendDeferred(self: *RegistryInformation, value: anytype) std.mem.Allocator.Error!void {
                     const registry: *RegistryT = @fieldParentPtr("info", self);
                     return registry.appendDeferred(value);
                 }
@@ -291,7 +299,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 /// **NOTE**:
                 ///     - Is an interrupt, other events are processed on call
                 ///     - See also, [emit](#mangle.Registry.emit)
-                pub inline fn emit(self: *RegistryInformation, eventData: anytype) !void {
+                pub fn emit(self: *RegistryInformation, eventData: anytype) !void {
                     return @as(*RegistryT, @fieldParentPtr("info", self)).emit(eventData);
                 }
             };

@@ -110,44 +110,42 @@ pub const Signature = struct {
 
     /// returns whether or not a structure (if not structure returns whether or not it is contained)
     /// qualifies for the signature
-    pub inline fn qualifies(comptime self: Signature, comptime T: type) bool {
-        comptime {
-            const info = switch (@typeInfo(flags.Flatten(T))) {
-                .@"struct" => |i| i,
-                else => @compileError("Error, type '" ++ @typeName(T) ++ "' is not a struct!"),
+    pub fn qualifies(comptime self: Signature, comptime T: type) bool {
+        const info = switch (@typeInfo(flags.Flatten(T))) {
+            .@"struct" => |i| i,
+            else => @compileError("Error, type '" ++ @typeName(T) ++ "' is not a struct!"),
+        };
+
+        inline for (self.fields) |requirement| {
+            if (requirement.status == .optional) continue;
+
+            const U = switch (@typeInfo(requirement.type)) {
+                .@"struct" => flags.Flatten(requirement.type),
+                else => requirement.type,
             };
-
-            for (self.fields) |requirement| {
-                if (requirement.status == .optional) continue;
-
-                const U = switch (@typeInfo(requirement.type)) {
-                    .@"struct" => flags.Flatten(requirement.type),
-                    else => requirement.type,
-                };
-                for (info.fields) |field| {
-                    switch (flags.fieldFlag(field.type)) {
-                        .composed => unreachable,
-                        else => {
-                            const Original = if (flags.isPathed(field.type)) flags.OriginalType(field.type) else field.type;
-                            const contains = switch (flags.fieldFlag(requirement.type)) {
-                                .owned => U == Original or flags.Leaf(U) == Original,
-                                .leaf => U == Original,
-                                .dissolve => U == Original,
-                                .composed => unreachable,
-                            };
-                            switch (requirement.status) {
-                                .required => if (contains) break,
-                                .excluded => if (contains) return false,
-                                else => unreachable,
-                            }
-                        },
-                    }
-                } else {
-                    return false;
+            inline for (info.fields) |field| {
+                switch (flags.fieldFlag(field.type)) {
+                    .composed => unreachable,
+                    else => {
+                        const Original = comptime if (flags.isPathed(field.type)) flags.OriginalType(field.type) else field.type;
+                        const contains = comptime switch (flags.fieldFlag(requirement.type)) {
+                            .owned => U == Original or flags.Leaf(U) == Original,
+                            .leaf => U == Original,
+                            .dissolve => U == Original,
+                            .composed => unreachable,
+                        };
+                        switch (requirement.status) {
+                            .required => if (contains) break,
+                            .excluded => if (contains) return false,
+                            else => unreachable,
+                        }
+                    },
                 }
+            } else {
+                return false;
             }
-            return true;
         }
+        return true;
     }
 
     /// Given a structure type `T` generates a signature from it.
@@ -177,39 +175,43 @@ pub const Signature = struct {
     ///> - `self.NamedType(T) != T` when `self.qualifies(T)` and `self.fields.len > 0`
     ///> - Asserts `self.qualifies(T)`
     ///> - Returns a memory equivilent type to T
-    pub inline fn NamedType(comptime self: Signature, comptime T: type) type {
-        comptime {
-            var info = util.deStruct(T);
-            if (!self.qualifies(T)) @compileError("Error, type '" ++ @typeName(T) ++ "' does not qualify!");
-            field: for (self.fields) |field| {
-                const Flattened = switch (@typeInfo(field.type)) {
-                    .@"struct" => flags.Flatten(field.type),
-                    else => field.type,
-                };
-                for (info.fieldTypes, 0..) |U, i| {
-                    const Original = if (flags.isPathed(U)) flags.OriginalType(U) else U;
-                    switch (flags.fieldFlag(Original)) {
-                        .dissolve => {
-                            if (Original == Flattened) {
-                                info.fieldNames[i] = field.name;
-                                info.fieldTypes[i] = flags.AliasType(U);
-                                info.fieldAttributes[i].default_value_ptr = null;
-                                continue :field;
-                            }
-                        },
-                        .leaf, .owned => {
-                            if (Original == Flattened) {
-                                info.fieldNames[i] = field.name;
-                                info.fieldTypes[i] = field.type;
-                                continue :field;
-                            }
-                        },
-                        else => unreachable,
-                    }
+    pub fn NamedType(comptime self: Signature, comptime T: type) type {
+        var info = util.deStruct(T);
+        if (!self.qualifies(T)) {
+            for (info.fieldNames, info.fieldTypes) |value, U| {
+                @compileLog(value, U);
+            }
+            @compileLog(info.fieldTypes.len);
+            @compileError("Error, type '" ++ @typeName(T) ++ "' does not qualify!");
+        }
+        field: for (self.fields) |field| {
+            const Flattened = switch (@typeInfo(field.type)) {
+                .@"struct" => flags.Flatten(field.type),
+                else => field.type,
+            };
+            for (info.fieldTypes, 0..) |U, i| {
+                const Original = if (flags.isPathed(U)) flags.OriginalType(U) else U;
+                switch (flags.fieldFlag(Original)) {
+                    .dissolve => {
+                        if (Original == Flattened) {
+                            info.fieldNames[i] = field.name;
+                            info.fieldTypes[i] = flags.AliasType(U);
+                            info.fieldAttributes[i].default_value_ptr = null;
+                            continue :field;
+                        }
+                    },
+                    .leaf, .owned => {
+                        if (Original == Flattened) {
+                            info.fieldNames[i] = field.name;
+                            info.fieldTypes[i] = field.type;
+                            continue :field;
+                        }
+                    },
+                    else => unreachable,
                 }
             }
-            return info.Construct();
         }
+        return info.Construct();
     }
 };
 
@@ -247,15 +249,11 @@ pub fn qualifies(comptime System: type) bool {
 }
 
 /// returns whether or not `Sys` has a declaration named [fields.receive.name](#mangle.system.fields.receive.name)
-pub inline fn hasReceive(comptime Sys: type) bool {
-    comptime {
-        return @hasDecl(Sys, fields.receive.name);
-    }
+pub fn hasReceive(comptime Sys: type) bool {
+    return @hasDecl(Sys, fields.receive.name);
 }
 
 /// returns whether or not `Sys` has a declaration named [fields.process.name](#mangle.system.fields.process.name)
-pub inline fn hasProcess(comptime Sys: type) bool {
-    comptime {
-        return @hasDecl(Sys, fields.process.name);
-    }
+pub fn hasProcess(comptime Sys: type) bool {
+    return @hasDecl(Sys, fields.process.name);
 }
