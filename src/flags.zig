@@ -131,6 +131,7 @@ pub fn Reduce(comptime T: type, comptime flag: Flags) type {
             else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
         };
         var deconstructed = util.deStruct(T);
+        // TODO: make this account for recursion
         @setEvalBranchQuota(500 * info.fields.len);
 
         for (deconstructed.fieldTypes, 0..) |V, i| {

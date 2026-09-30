@@ -139,7 +139,12 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     .data = data,
                     .appendQueue = appendVal,
                     .dropQueue = dropVal,
-                    .info = .{ .gpa = gpa, .io = io, .delta = 0.0, .extra = extra },
+                    .info = .{
+                        .gpa = gpa,
+                        .io = io,
+                        .delta = 0.0,
+                        .extra = extra,
+                    },
                 };
             }
 
@@ -200,6 +205,11 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             /// Given the registry and a value of a type in the registry, adds the value
             /// Returns a pointer to the type new value
             ///
+            /// If the inputted value is a union, will do a switch, adding the active field into it.
+            /// Asserts every field of the union is either a top-level value, or `void`, in which case it's ignored
+            ///
+            /// Works for `?T`, as well, ignoring if `value == null`
+            ///
             ///> **NOTE**:
             ///> - Pointer is owned by `self`
             ///> - Pointer may be invalidated between calls of `process`
@@ -208,20 +218,31 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             ///> - Returned pointer is not guaranteed to be the same type as `value`
             ///> - May cause runtime overhead if `@TypeOf(value) != flags.Flatten(@TypeOf(value))`
             pub fn addValue(self: *@This(), value: anytype) std.mem.Allocator.Error!void {
-                const TPrime = @TypeOf(value);
-                inline for (allTypes, 0..) |U, i|
-                    // already processed
-                    if (TPrime == U)
-                        return self.data[i].append(self.info.gpa, value);
+                switch (comptime @typeInfo(@TypeOf(value))) {
+                    .@"struct" => {
+                        const TPrime = @TypeOf(value);
+                        inline for (allTypes, 0..) |U, i|
+                            // already processed
+                            if (TPrime == U)
+                                return self.data[i].append(self.info.gpa, value);
 
-                const T = flags.Path(flags.Flatten(TPrime));
-                const i = comptime for (allTypes, 0..) |J, i| {
-                    if (T == J) break i;
-                } else @compileError("Error, type \"" ++ @typeName(T) ++ "\" is not in the Registry!");
+                        const T = flags.Path(flags.Flatten(TPrime));
+                        const i = comptime for (allTypes, 0..) |J, i| {
+                            if (T == J) break i;
+                        } else @compileError("Error, type \"" ++ @typeName(T) ++ "\" is not in the Registry!");
 
-                const flattened = flags.flatten(value);
+                        const flattened = flags.flatten(value);
 
-                try self.data[i].append(self.info.gpa, flags.path(&flattened).*);
+                        try self.data[i].append(self.info.gpa, flags.path(&flattened).*);
+                    },
+                    .@"union" => try switch (value) {
+                        inline else => |unwrapped| self.addValue(unwrapped),
+                    },
+                    .optional => if (value) |v| {
+                        self.addValue(v);
+                    },
+                    else => @compileError("Error, type \"" ++ @typeName(@TypeOf(value)) ++ " is not an optional, union, or struct!"),
+                }
             }
 
             /// adds a top-level value to the registry after `process` is called
@@ -230,6 +251,13 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             ///>    - see also [appendDeferred](#mangle.Registry.RegistryInformation.appendDeferred)
             ///>    - see also [addValue](#mangle.Registry.addValue)
             pub fn appendDeferred(self: *RegistryT, value: anytype) std.mem.Allocator.Error!void {
+                switch (@typeInfo(@TypeOf(value))) {
+                    .@"union" => try switch (value) {
+                        inline else => |unwrapped| self.addValue(unwrapped),
+                    },
+                    .optional => try if (value) |v| self.appendDeferred(v),
+                    else => {},
+                }
                 const TPrime = flags.Path(flags.Flatten(@TypeOf(value)));
                 const flattened = flags.flatten(value);
                 inline for (@typeInfo(AppendType).@"struct".fields) |field| {
