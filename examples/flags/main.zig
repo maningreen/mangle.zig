@@ -149,34 +149,34 @@ const ReplicateSystem = struct {
     }
 };
 
-const Registry = mangle.Registry(
-    &.{
-        // Not directly usd in the registry, therefore can be omited
-        // Particle,
-        WrappingParticle,
-        BouncingParticle,
-        ReplicatingBounce,
-        ReplicatingWrap,
-    },
-    &.{
-        DrawParticle,
-        MoveParticle,
-        WrapParticle,
-        BounceParticle,
-        ReplicateSystem,
-    },
-    struct { rand: std.Random },
-);
+const Registry = blk: {
+    // 2_781 is the actual amount of backwards branches necessary to compile, try lowering it!
+    @setEvalBranchQuota(2_781);
+    break :blk mangle.Registry(
+        &.{
+            // Not directly usd in the registry, therefore can be omited
+            // Particle,
+            WrappingParticle,
+            BouncingParticle,
+            ReplicatingBounce,
+            ReplicatingWrap,
+        },
+        &.{
+            DrawParticle,
+            MoveParticle,
+            WrapParticle,
+            BounceParticle,
+            ReplicateSystem,
+        },
+        struct { rand: std.Random },
+    );
+};
 
 const timestep: std.Io.Duration = .{ .nanoseconds = 0.1 * std.time.ns_per_s };
 const world_border: Rectangle = .{
     .pos = .{ .x = 1, .y = 1 },
     .dim = .{ .x = 50, .y = 25 },
 };
-
-comptime {
-    @setEvalBranchQuota(100_000);
-}
 
 pub fn main(init: std.process.Init) !void {
     const rand = std.Random.IoSource{

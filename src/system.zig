@@ -123,13 +123,14 @@ pub const Signature = struct {
                 .@"struct" => flags.Flatten(requirement.type),
                 else => requirement.type,
             };
+
             inline for (info.fields) |field| {
                 switch (flags.fieldFlag(field.type)) {
                     .composed => unreachable,
                     else => {
                         const Original = comptime if (flags.isPathed(field.type)) flags.OriginalType(field.type) else field.type;
                         const contains = comptime switch (flags.fieldFlag(requirement.type)) {
-                            .owned => U == Original or flags.Leaf(U) == Original,
+                            .owned => U == Original,
                             .leaf => U == Original,
                             .dissolve => U == Original,
                             .composed => unreachable,

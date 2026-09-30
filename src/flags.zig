@@ -126,12 +126,12 @@ pub fn Own(comptime T: type) type {
 ///> - Make name conflicts discarded in preference for higher level ones, and compileError otherwise
 pub fn Reduce(comptime T: type, comptime flag: Flags) type {
     comptime {
-        @setEvalBranchQuota(75_000);
         const info = switch (@typeInfo(T)) {
             .@"struct" => |i| i,
             else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
         };
         var deconstructed = util.deStruct(T);
+        @setEvalBranchQuota(500 * info.fields.len);
 
         for (deconstructed.fieldTypes, 0..) |V, i| {
             if (@typeInfo(V) == .@"struct") {
@@ -149,8 +149,8 @@ pub fn Reduce(comptime T: type, comptime flag: Flags) type {
         var fieldPostDropCount: comptime_int = 0;
         var decomposeCount: comptime_int = 0;
 
-        // just a count pass
         for (deconstructed.fieldTypes, 0..) |V, i| {
+            // just a count pass
             if (@typeInfo(V) == .@"struct") {
                 const U = deconstructed.fieldTypes[i];
                 if (fieldFlag(U) == flag) {
@@ -163,10 +163,8 @@ pub fn Reduce(comptime T: type, comptime flag: Flags) type {
                     // flagCount += 1;
                 }
             }
-        }
 
-        // fix value ptrs
-        for (deconstructed.fieldTypes, 0..) |V, i| {
+            // fix defaults
             if (@typeInfo(V) == .@"struct") {
                 if (deconstructed.fieldAttributes[i].default_value_ptr) |p| {
                     const reducedPtr = reduce(@as(*const V, @ptrCast(@alignCast(p))).*, flag);
@@ -253,7 +251,8 @@ pub fn reduce(value: anytype, comptime flag: Flags) Reduce(@TypeOf(value), flag)
 /// Returns whether or not str is one of the flag formats
 ///
 ///> **NOTE**:
-///> [See also flags](#mangle.flags.Flags)
+///>    - [See also flags](#mangle.flags.Flags)
+///>    - When field checking, just use `fieldFlag`
 pub fn isFlagFormat(str: []const u8) bool {
     inline for (std.enums.values(std.meta.DeclEnum(formats))) |decl| {
         if (std.mem.eql(u8, str, @field(formats, @tagName(decl))))
@@ -495,10 +494,8 @@ pub fn erode(value: anytype) Erode(@TypeOf(value)) {
 /// For more information see: [Compose(T)](#mangle.flags.Compose)
 ///
 /// For a runtime version, see [flatten](#mangle.flags.flatten)
-pub fn Flatten(comptime T: type) type {
-    comptime {
-        return Reduce(T, .composed);
-    }
+pub inline fn Flatten(comptime T: type) type {
+    return Reduce(T, .composed);
 }
 
 /// Runtime application of `Compose`

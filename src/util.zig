@@ -6,22 +6,6 @@ test {
     std.testing.refAllDecls(@This());
 }
 
-const paddingFmt = "__explicit_padding_{d}__";
-
-/// Given a type, say `std.mem.Allocator`
-/// return the basename of the type, in this case `Allocator`
-/// > **WARNING**:
-/// > - May be ambiguous for nonunique names, when being unique matters, such as indexing use `@typeName()`
-pub fn getBaseName(comptime T: type) [:0]const u8 {
-    comptime {
-        const full_name = @typeName(T);
-        // Find the last index of '.'
-        if (std.mem.lastIndexOfScalar(u8, full_name, '.')) |index|
-            return full_name[index + 1 ..];
-        return full_name;
-    }
-}
-
 /// Count represents the amount of fields
 ///
 ///> **NOTE**:
@@ -109,53 +93,11 @@ pub fn deStruct(comptime T: type) DeStructInfo(@typeInfo(T).@"struct".fields.len
     }
 }
 
-/// Sorts DeStructInfo by memory offset.
-/// When constructing, it's recommended to use [ConstructExtra(.@"extern")](#mangle.util.DeStructInfo.ConstructExtra)
-///
-///> **NOTE**:
-///> - See also [deStruct](#mangle.util.deStruct)
-pub fn deStructLayout(comptime T: type) DeStructInfo(@typeInfo(T).@"struct".fields.len) {
-    comptime {
-        const info = switch (@typeInfo(T)) {
-            .@"struct" => |i| i,
-            else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a structure!"),
-        };
-        var fields: [info.fields.len]std.builtin.Type.StructField = undefined;
-        for (0..info.fields.len) |i|
-            fields[i] = info.fields[i];
-
-        std.mem.sortUnstable(
-            std.builtin.Type.StructField,
-            &fields,
-            void{},
-            (struct {
-                fn lessThan(_: void, a: std.builtin.Type.StructField, b: @TypeOf(a)) bool {
-                    return @offsetOf(T, a.name) < @offsetOf(T, b.name);
-                }
-            }).lessThan,
-        );
-
-        var ret: DeStructInfo(fields.len) = undefined;
-        var structI = 0;
-        for (info.fields, 0..) |field, i| {
-            ret.fieldAttributes[i].@"align" = field.alignment;
-            ret.fieldAttributes[i].@"comptime" = field.is_comptime;
-            ret.fieldAttributes[i].default_value_ptr = field.default_value_ptr;
-            ret.fieldTypes[i] = field.type;
-            ret.fieldNames[i] = field.name;
-
-            structI += @sizeOf(@FieldType(T, field.name));
-        }
-
-        return ret;
-    }
-}
-
 pub fn strEql(a: []const u8, b: []const u8) bool {
     return std.mem.eql(u8, a, b);
 }
 
-///goes through the fields and applies the `==` operator
+/// goes through the fields and applies the `==` operator
 ///
 ///> **WARNING**:
 ///> - does not (yet) cover pointers and substructure fields
@@ -307,6 +249,9 @@ pub fn PtrReinterpret(comptime In: type, comptime Element: type) type {
 }
 
 /// Given type T and U, checks if the memory layout's the same.
+///
+/// **WARNING**:
+///>    - Don't depend on this... It just checks size and alignment.
 pub fn layoutEql(comptime T: type, comptime U: type) bool {
     comptime {
         // const sortedT = deStructLayout(T);
