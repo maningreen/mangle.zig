@@ -125,15 +125,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 }
 
                 if (@import("builtin").mode == .Debug)
-                    inline for (types) |T| {
-                        std.debug.print("Type '{}' qualifies for system(s): ", .{T});
-                        inline for (systems) |Sys| {
-                            if (Sys.requirements.qualifies(T)) {
-                                std.debug.print("'{}', ", .{Sys});
-                            }
-                        }
-                        std.debug.print("\n", .{});
-                    };
+                    logQualify();
 
                 return .{
                     .data = data,
@@ -399,6 +391,21 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             pub const allTypes = retyped;
             /// The original types inputted to the system.
             pub const originalTypes: []const type = types;
+
+            /// Prints the systems top-level types qualify for.
+            ///
+            /// Runs automatically on `@import("builtin").mode == .Debug`, doesn't otherwise
+            pub fn logQualify() void {
+                inline for (types) |T| {
+                    std.debug.print("Type '{}' qualifies for system(s): ", .{T});
+                    inline for (systems) |Sys| {
+                        if (Sys.requirements.qualifies(T)) {
+                            std.debug.print("'{}', ", .{Sys});
+                        }
+                    }
+                    std.debug.print("\n", .{});
+                }
+            }
         };
     }
 }
