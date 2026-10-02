@@ -177,6 +177,8 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     for (self.data[i].items) |*value|
                         self.itemDeinit(value);
                     self.data[i].deinit(self.info.gpa);
+                    self.appendQueue[i].deinit(self.info.gpa);
+                    self.dropQueue[i].deinit(self.info.gpa);
                 }
             }
 
