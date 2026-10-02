@@ -540,6 +540,7 @@ fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
         new.fieldTypes[i] = struct {
             const __internal_registry_type_path__ = prefix;
             const __InternalRegistryOriginalType__ = T;
+            const __internal_registry_leaf_flag__ = {};
         };
         new.fieldAttributes[i] = .{};
         return new.Construct();
@@ -581,7 +582,7 @@ pub fn OriginalType(comptime T: type) type {
 
     if (@hasField(T, formats.identity)) {
         return @field(@FieldType(T, formats.identity), pathing.originalSubfield);
-    } else @compileError("Error: '" ++ @typeName(T) ++ "' is not pathed!");
+    } else return T;
 }
 
 pub fn isPathed(comptime T: type) bool {

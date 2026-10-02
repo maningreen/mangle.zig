@@ -69,13 +69,27 @@ fn applySystem(
 
     const Named = @field(Sys, system.fields.signature.name).NamedType(T);
     comptime {
-        std.debug.assert(util.layoutEql(T, Named)); // If this fails, report an issue on github
+        if (!util.layoutEql(T, Named))
+            @compileError(
+                \\This is asserted, and if fails, report on github. Also include the type definition for '
+            ++ @typeName(flags.OriginalType(T)) ++
+                \\' and substructures." You may also want to include the definition for the system '
+            ++ @typeName(Sys) ++
+                \\'
+            );
     }
     return @call(
         if (inlined) .always_inline else .auto,
         @field(Sys, @tagName(function)),
         .{ Named, @as(*Named, @ptrCast(value)) } ++ extraArgs,
     );
+}
+
+fn TypeTransform(comptime T: type) type {
+    return flags.Flatten(flags.Path(T));
+}
+fn transform(value: anytype) TypeTransform(@TypeOf(value)){
+    return flags.flatten(flags.path(&value).*);
 }
 
 /// `types` should be all the types the registry will utilize at the top level,
@@ -91,7 +105,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
         for (types, 0..) |T, i| {
             if (@typeInfo(T) != .@"struct")
                 @compileError("Error: type '" ++ @typeName(T) ++ "' is not a structure!");
-            retyped[i] = flags.Path(flags.Flatten(T));
+            retyped[i] = TypeTransform(T);
             valueTypes[i] = Array(retyped[i]);
             dropItem[i] = Array(*retyped[i]);
         }
@@ -218,14 +232,14 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                             if (TPrime == U)
                                 return self.data[i].append(self.info.gpa, value);
 
-                        const T = flags.Path(flags.Flatten(TPrime));
+                        const T = TypeTransform(TPrime);
                         const i = comptime for (allTypes, 0..) |J, i| {
                             if (T == J) break i;
-                        } else @compileError("Error, type \"" ++ @typeName(T) ++ "\" is not in the Registry!");
+                        } else @compileError("Error, type \"" ++ @typeName(@TypeOf(value)) ++ "\" is not in the Registry!");
 
-                        const flattened = flags.flatten(value);
+                        const flattened = flags.flatten(flags.path(&value).*);
 
-                        try self.data[i].append(self.info.gpa, flags.path(&flattened).*);
+                        try self.data[i].append(self.info.gpa, flattened);
                     },
                     .@"union" => try switch (value) {
                         inline else => |unwrapped| self.addValue(unwrapped),
@@ -250,12 +264,11 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     .optional => try if (value) |v| self.appendDeferred(v),
                     else => {},
                 }
-                const TPrime = flags.Path(flags.Flatten(@TypeOf(value)));
-                const flattened = flags.flatten(value);
+                const TPrime = TypeTransform(@TypeOf(value));
                 inline for (@typeInfo(AppendType).@"struct".fields) |field| {
                     if (Array(TPrime) == field.type)
                         break try @field(self.appendQueue, field.name)
-                            .append(self.info.gpa, flags.path(&flattened).*);
+                            .append(self.info.gpa, transform(value));
                 } else @compileError("Error: Type '" ++ @typeName(@TypeOf(value)) ++ "' is not in the registry!");
             }
 
