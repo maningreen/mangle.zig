@@ -88,7 +88,8 @@ fn applySystem(
 fn TypeTransform(comptime T: type) type {
     return flags.Flatten(flags.Path(T));
 }
-fn transform(value: anytype) TypeTransform(@TypeOf(value)){
+
+fn transform(value: anytype) TypeTransform(@TypeOf(value)) {
     return flags.flatten(flags.path(&value).*);
 }
 
@@ -291,12 +292,12 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                         for (RegistryT.allTypes, 0..) |U, i| {
                             if (util.strEql(@typeName(U), uName))
                                 break :blk i;
-                        } else @compileError("Error: type '" ++ @typeName(@TypeOf(value)) ++ "' is not anywhere in the registry");
+                        } else @compileError("Error: type '" ++ @typeName(T) ++ "' is not anywhere in the registry");
                     } else {
                         for (RegistryT.allTypes, 0..) |U, i| {
                             if (flags.OriginalType(U) == T)
                                 break :blk i;
-                        } else @compileError("Error: type '" ++ @typeName(@TypeOf(value)) ++ "' is not anywhere in the registry");
+                        } else @compileError("Error: type '" ++ @typeName(T) ++ "' is not anywhere in the registry");
                     }
                 };
                 try self.dropQueue[i].append(self.gpa, @ptrCast(value));
