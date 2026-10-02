@@ -113,7 +113,7 @@ pub const Signature = struct {
     pub fn qualifies(comptime self: Signature, comptime T: type) bool {
         const info = switch (@typeInfo(flags.Flatten(T))) {
             .@"struct" => |i| i,
-            else => @compileError("Error, type '" ++ @typeName(T) ++ "' is not a struct!"),
+            else => @compileError("Error, type '" ++ @typeName(flags.OriginalType(T)) ++ "' is not a struct!"),
         };
 
         inline for (self.fields) |requirement| {
@@ -155,7 +155,7 @@ pub const Signature = struct {
         comptime {
             const info = switch (@typeInfo(T)) {
                 .@"struct" => |i| i,
-                else => @compileError("Error: Type '" ++ @typeName(T) ++ "' is not a struct!"),
+                else => @compileError("Error: Type '" ++ @typeName(flags.OriginalType(T)) ++ "' is not a struct!"),
             };
             var collectFields: [info.fields.len]Item = undefined;
             for (info.fields, 0..) |value, i| {
@@ -183,7 +183,7 @@ pub const Signature = struct {
                 @compileLog(value, U);
             }
             @compileLog(info.fieldTypes.len);
-            @compileError("Error, type '" ++ @typeName(T) ++ "' does not qualify!");
+            @compileError("Error, type '" ++ @typeName(flags.OriginalType(T)) ++ "' does not qualify!");
         }
         field: for (self.fields) |field| {
             const Flattened = switch (@typeInfo(field.type)) {
