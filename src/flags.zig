@@ -158,7 +158,7 @@ pub fn Reduce(comptime T: type, comptime flag: Flags) type {
                     // - 1 to account for flag
                     fieldDelta += @typeInfo(U).@"struct".fields.len - 1;
                     for (@typeInfo(U).@"struct".fields) |subField| {
-                        if (isFlagFormat(subField.name)) fieldPostDropCount += 1;
+                        if (isMetadata(subField.name)) fieldPostDropCount += 1;
                     }
                     decomposeCount += 1;
                     // flagCount += 1;
@@ -192,7 +192,7 @@ pub fn Reduce(comptime T: type, comptime flag: Flags) type {
         i = 0;
         outer: for (flattenedInfo.fieldNames, flattenedInfo.fieldTypes, flattenedInfo.fieldAttributes) |name, Type, attr| {
             // drop inherited flags
-            if (!isFlagFormat(name)) {
+            if (!isMetadata(name)) {
                 const decls = @typeInfo(formats).@"struct".decls;
                 for (decls) |decl| {
                     if (std.mem.containsAtLeast(u8, name, 1, @field(formats, decl.name))) {
@@ -440,7 +440,7 @@ pub fn AliasType(comptime T: type) type {
             else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
         };
         for (info.fields) |field| {
-            if (!isFlagFormat(field.name)) return field.type;
+            if (!isMetadata(field.name)) return field.type;
         } else unreachable;
     }
 }
@@ -455,7 +455,7 @@ pub fn aliasUnwrap(value: anytype) AliasType(@TypeOf(value)) {
         else => @compileError("Error: type '" ++ @typeName(@TypeOf(value)) ++ "' is not a struct!"),
     };
     inline for (info.fields) |field|
-        if (comptime !isFlagFormat(field.name))
+        if (comptime !isMetadata(field.name))
             return @field(value, field.name);
 }
 
@@ -522,7 +522,9 @@ fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
             .@"struct" => void{},
             else => return T,
         }
-        if (@hasField(T, formats.identity)) @compileError("Type '" ++ @typeName(T) ++ "' already has a path!");
+        if (@hasField(T, formats.identity)) {
+            @compileError(std.fmt.comptimePrint("Type '{}' already has a path: '{any}'. Please report this as an issue.", .{ OriginalType(T), @typeInfo(@FieldType(T, formats.identity)).@"struct".decls }));
+        }
 
         var deconstructed = util.deStruct(T);
         for (deconstructed.fieldTypes, deconstructed.fieldNames, 0..) |U, name, i| {
@@ -599,7 +601,13 @@ pub fn aliasName(comptime T: type) [:0]const u8 {
             else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not aliased!"),
         };
         for (info.fields) |field| {
-            if (!isFlagFormat(field.name)) return field.name;
+            if (!isMetadata(field.name)) return field.name;
         }
     }
+}
+
+fn isMetadata(str: []const u8) bool {
+    inline for (@typeInfo(formats).@"struct".decls) |decl| {
+        if (util.strEql(decl.name, str)) return true;
+    } else return false;
 }

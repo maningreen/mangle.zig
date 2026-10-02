@@ -200,8 +200,8 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 try self.append();
             }
 
-            pub fn getArrayFromType(self: *@This(), comptime T: type) *Array(TypeTransform(T)) {
-                const i = comptime for (originalTypes, 0..) |J, i| {
+            fn getArrayFromType(self: *@This(), comptime T: type) *Array(T) {
+                const i = comptime for (allTypes, 0..) |J, i| {
                     if (T == J)
                         break i;
                 } else @compileError("Error, type '" ++ @typeName(T) ++ "' is not in the Registry!");
