@@ -159,7 +159,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 const T: type = @TypeOf(value);
                 const info = switch (@typeInfo(T)) {
                     .pointer => |i| i,
-                    else => @compileError("Error: Type '" ++ @typeName(value) ++ "' is not a pointer!"),
+                    else => @compileError("Error: Type '" ++ @typeName(T) ++ "' is not a pointer!"),
                 };
                 const DeinitType: type = fn (comptime T: type, value: anytype, info: anytype) void;
                 const i: comptime_int = comptime for (RegistryT.allTypes, 0..) |U, i| {
@@ -200,8 +200,8 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 try self.append();
             }
 
-            pub fn getArrayFromType(self: *@This(), comptime T: type) *Array(T) {
-                const i = comptime for (allTypes, 0..) |J, i| {
+            pub fn getArrayFromType(self: *@This(), comptime T: type) *Array(TypeTransform(T)) {
+                const i = comptime for (originalTypes, 0..) |J, i| {
                     if (T == J)
                         break i;
                 } else @compileError("Error, type '" ++ @typeName(T) ++ "' is not in the Registry!");
