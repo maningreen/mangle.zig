@@ -9,7 +9,7 @@ const meta = std.meta;
 const util = @import("util.zig");
 const flags = @import("flags.zig");
 const StructField = std.builtin.Type.StructField;
-const StructAttrs = std.builtin.Type.StructField.Attributes;
+const StructAttrs = std.lang.Type.Struct.FieldAttributes;
 
 const Argument = struct {
     @"comptime": bool,
@@ -124,11 +124,11 @@ pub const Signature = struct {
                 else => requirement.type,
             };
 
-            inline for (info.fields) |field| {
-                switch (flags.fieldFlag(field.type)) {
+            inline for (info.field_types) |Type| {
+                switch (flags.fieldFlag(Type)) {
                     .composed => unreachable,
                     else => {
-                        const Original = comptime if (flags.isPathed(field.type)) flags.OriginalType(field.type) else field.type;
+                        const Original = comptime if (flags.isPathed(Type)) flags.OriginalType(Type) else Type;
                         const contains = comptime switch (flags.fieldFlag(requirement.type)) {
                             .owned => U == Original,
                             .leaf => U == Original,
@@ -157,18 +157,18 @@ pub const Signature = struct {
                 .@"struct" => |i| i,
                 else => @compileError("Error: Type '" ++ @typeName(flags.OriginalType(T)) ++ "' is not a struct!"),
             };
-            var collectFields: [info.fields.len]Item = undefined;
-            for (info.fields, 0..) |value, i| {
-                collectFields[i] = .{ .name = value.name, .type = value.type };
+            var collectFields: [info.field_names.len]Item = undefined;
+            for (info.field_names, info.field_types, 0..) |fieldName, Field, i| {
+                collectFields[i] = .{ .name = fieldName, .type = Field };
             }
             const U = struct {
-                const fields: [info.fields.len]Item = collectFields;
+                const fields: [info.field_names.len]Item = collectFields;
             };
             return .{ .fields = &U.fields };
         }
     }
 
-    const voidValue: void = void{};
+    const voidValue: void = {};
 
     /// Returns the inputed structure with names according to the fields
     ///
@@ -231,9 +231,9 @@ pub fn qualifies(comptime System: type) bool {
                         .@"fn" => |i| i,
                         else => return false,
                     };
-                    outer: for (funcInfo.params) |param| {
+                    outer: for (funcInfo.param_types) |Param| {
                         for (func.fields) |arg| {
-                            if (param.type == arg.type and param.is_generic == (arg.type == null))
+                            if (Param == arg.type)
                                 continue :outer;
                         } else return false;
                     }

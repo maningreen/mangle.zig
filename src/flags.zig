@@ -132,7 +132,7 @@ pub fn Reduce(comptime T: type, comptime flag: Flags) type {
         };
         var deconstructed = util.deStruct(T);
         // TODO: make this account for recursion
-        @setEvalBranchQuota(500 * info.fields.len);
+        @setEvalBranchQuota(500 * info.field_names.len);
 
         for (deconstructed.fieldTypes, 0..) |V, i| {
             if (@typeInfo(V) == .@"struct") {
@@ -141,8 +141,8 @@ pub fn Reduce(comptime T: type, comptime flag: Flags) type {
         }
 
         // skip if no changes made
-        for (deconstructed.fieldTypes, info.fields) |V, field| {
-            if (V != field.type or fieldFlag(V) == flag)
+        for (deconstructed.fieldTypes, info.field_types) |V, U| {
+            if (V != U or fieldFlag(V) == flag)
                 break;
         } else return T;
 
@@ -156,9 +156,9 @@ pub fn Reduce(comptime T: type, comptime flag: Flags) type {
                 const U = deconstructed.fieldTypes[i];
                 if (fieldFlag(U) == flag) {
                     // - 1 to account for flag
-                    fieldDelta += @typeInfo(U).@"struct".fields.len - 1;
-                    for (@typeInfo(U).@"struct".fields) |subField| {
-                        if (isMetadata(subField.name)) fieldPostDropCount += 1;
+                    fieldDelta += @typeInfo(U).@"struct".field_names.len - 1;
+                    for (@typeInfo(U).@"struct".field_names) |subField| {
+                        if (isMetadata(subField)) fieldPostDropCount += 1;
                     }
                     decomposeCount += 1;
                     // flagCount += 1;
@@ -193,9 +193,9 @@ pub fn Reduce(comptime T: type, comptime flag: Flags) type {
         outer: for (flattenedInfo.fieldNames, flattenedInfo.fieldTypes, flattenedInfo.fieldAttributes) |name, Type, attr| {
             // drop inherited flags
             if (!isMetadata(name)) {
-                const decls = @typeInfo(formats).@"struct".decls;
+                const decls = @typeInfo(formats).@"struct".decl_names;
                 for (decls) |decl| {
-                    if (std.mem.containsAtLeast(u8, name, 1, @field(formats, decl.name))) {
+                    if (std.mem.containsAtLeast(u8, name, 1, @field(formats, decl))) {
                         continue :outer;
                     }
                 }
@@ -224,26 +224,26 @@ pub fn reduce(value: anytype, comptime flag: Flags) Reduce(@TypeOf(value), flag)
     const Return = @TypeOf(ret);
     if (T == Return)
         return value;
-    inline for (info.fields) |field| {
-        switch (@typeInfo(field.type)) {
+    inline for (info.field_names, info.field_types) |name, Type| {
+        switch (@typeInfo(Type)) {
             .@"struct" => {
-                if (@hasField(Return, field.name)) {
-                    if (@FieldType(Return, field.name) == field.type) {
-                        @field(ret, field.name) = @field(value, field.name);
+                if (@hasField(Return, name)) {
+                    if (@FieldType(Return, name) == Type) {
+                        @field(ret, name) = @field(value, name);
                     }
                 } else {
-                    const reduced = reduce(@field(value, field.name), flag);
-                    if (comptime fieldFlag(field.type) == flag) {
-                        inline for (@typeInfo(@TypeOf(reduced)).@"struct".fields) |subField| {
-                            if (@hasField(Return, subField.name))
-                                @field(ret, subField.name) = @field(reduced, subField.name)
-                            else if (@hasField(Return, field.name ++ "_" ++ subField.name))
-                                @field(ret, field.name ++ "_" ++ subField.name) = @field(reduced, subField.name);
+                    const reduced = reduce(@field(value, name), flag);
+                    if (comptime fieldFlag(Type) == flag) {
+                        inline for (@typeInfo(@TypeOf(reduced)).@"struct".field_names) |subField| {
+                            if (@hasField(Return, subField))
+                                @field(ret, subField) = @field(reduced, subField)
+                            else if (@hasField(Return, name ++ "_" ++ subField))
+                                @field(ret, name ++ "_" ++ subField) = @field(reduced, subField);
                         }
-                    } else @field(ret, field.name) = reduced;
+                    } else @field(ret, name) = reduced;
                 }
             },
-            else => @field(ret, field.name) = @field(value, field.name),
+            else => @field(ret, name) = @field(value, name),
         }
     }
     return ret;
@@ -386,12 +386,12 @@ pub fn Alias(comptime Type: type, comptime label: []const u8) type {
             &.{ label, formats.dissolve },
             &.{ Type, void },
             &.{
-                std.builtin.Type.StructField.Attributes{
+                std.lang.Type.Struct.FieldAttributes{
                     .@"align" = null,
                     .default_value_ptr = null,
                     .@"comptime" = false,
                 },
-                std.builtin.Type.StructField.Attributes{
+                std.lang.Type.Struct.FieldAttributes{
                     .@"align" = null,
                     .default_value_ptr = &voidValue,
                     .@"comptime" = false,
@@ -418,10 +418,10 @@ pub fn alias(comptime T: type, value: anytype) T {
     switch (@typeInfo(T)) {
         .@"struct" => |i| {
             var ret: T = undefined;
-            @field(ret, formats.dissolve) = void{};
-            inline for (i.fields) |field| {
-                comptime if (util.strEql(field.name, formats.dissolve)) continue;
-                @field(ret, field.name) = value;
+            @field(ret, formats.dissolve) = {};
+            inline for (i.field_names) |field| {
+                comptime if (util.strEql(field, formats.dissolve)) continue;
+                @field(ret, field) = value;
             }
             return ret;
         },
@@ -439,8 +439,8 @@ pub fn AliasType(comptime T: type) type {
             .@"struct" => |i| i,
             else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
         };
-        for (info.fields) |field| {
-            if (!isMetadata(field.name)) return field.type;
+        for (info.field_names, info.field_types) |field, U| {
+            if (!isMetadata(field)) return U;
         } else unreachable;
     }
 }
@@ -454,9 +454,9 @@ pub fn aliasUnwrap(value: anytype) AliasType(@TypeOf(value)) {
         .@"struct" => |i| i,
         else => @compileError("Error: type '" ++ @typeName(@TypeOf(value)) ++ "' is not a struct!"),
     };
-    inline for (info.fields) |field|
-        if (comptime !isMetadata(field.name))
-            return @field(value, field.name);
+    inline for (info.field_names) |field|
+        if (comptime !isMetadata(field))
+            return @field(value, field);
 }
 
 /// Application of `Dissolve`
@@ -519,7 +519,7 @@ pub fn Path(comptime T: type) type {
 fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
     comptime {
         switch (@typeInfo(T)) {
-            .@"struct" => void{},
+            .@"struct" => {},
             else => return T,
         }
         if (@hasField(T, formats.identity)) {
@@ -607,7 +607,7 @@ pub fn aliasName(comptime T: type) [:0]const u8 {
 }
 
 fn isMetadata(str: []const u8) bool {
-    inline for (@typeInfo(formats).@"struct".decls) |decl| {
-        if (util.strEql(decl.name, str)) return true;
+    inline for (@typeInfo(formats).@"struct".decl_names) |decl| {
+        if (util.strEql(decl, str)) return true;
     } else return false;
 }

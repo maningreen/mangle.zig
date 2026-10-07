@@ -48,7 +48,7 @@ const ReplicatingWrap = struct {
 
 const BouncingParticle = struct {
     particle: mangle.Compose(Particle),
-    bounce: Bounce = .{ .bounce = void{} },
+    bounce: Bounce,
     testField: u32 = 30,
 };
 
@@ -205,6 +205,7 @@ pub fn main(init: std.process.Init) !void {
                 .vel = mangle.alias(Velocity, Vec2{ .x = -10, .y = 10 }),
                 .char = mangle.alias(Char, 'R'),
             },
+            .bounce = mangle.alias(Bounce, {}),
         },
     });
 

@@ -11,7 +11,7 @@ const std = @import("std");
 const meta = std.meta;
 pub const util = @import("util.zig");
 const StructField = std.builtin.Type.StructField;
-const StructAttrs = std.builtin.Type.StructField.Attributes;
+const StructAttrs = std.lang.Type.Struct.FieldAttributes;
 pub const flags = @import("flags.zig");
 pub const Compose = flags.Compose;
 pub const Leaf = flags.Leaf;
@@ -38,19 +38,19 @@ fn applySystem(
         else => @compileError("Error: Type '" ++ @typeName(T) ++ "' is not a struct!"),
     };
 
-    inline for (info.fields) |field| {
-        switch (@typeInfo(field.type)) {
+    inline for (info.field_names, info.field_types) |name, U| {
+        switch (@typeInfo(U)) {
             .@"struct" => {
-                switch (comptime flags.fieldFlag(field.type)) {
+                switch (comptime flags.fieldFlag(U)) {
                     .owned => {
-                        switch (@typeInfo(field.type)) {
+                        switch (@typeInfo(U)) {
                             .@"struct" => {
                                 try applySystem(
                                     Sys,
-                                    field.type,
+                                    U,
                                     function,
                                     inlined,
-                                    &@field(value, field.name),
+                                    &@field(value, name),
                                     extraArgs,
                                 );
                             },
@@ -139,7 +139,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     appendVal[i] = .empty;
                 }
 
-                if (@import("builtin").mode == .Debug)
+                if (@import("builtin").mode == .debug)
                     logQualify();
 
                 return .{
@@ -268,9 +268,9 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     else => {},
                 }
                 const TPrime = TypeTransform(@TypeOf(value));
-                inline for (@typeInfo(AppendType).@"struct".fields) |field| {
-                    if (Array(TPrime) == field.type)
-                        break try @field(self.appendQueue, field.name)
+                inline for (@typeInfo(AppendType).@"struct".field_names, @typeInfo(AppendType).@"struct".field_types) |name, U| {
+                    if (Array(TPrime) == U)
+                        break try @field(self.appendQueue, name)
                             .append(self.info.gpa, transform(value));
                 } else @compileError("Error: Type '" ++ @typeName(@TypeOf(value)) ++ "' is not in the registry!");
             }
@@ -344,13 +344,13 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             /// invalidates pointers
             fn drop(self: *RegistryT) void {
                 const dropInfo = @typeInfo(DropType).@"struct";
-                inline for (dropInfo.fields) |field| {
-                    for (@field(self.dropQueue, field.name).items) |i|
+                inline for (dropInfo.field_names) |name| {
+                    for (@field(self.dropQueue, name).items) |i|
                         self.itemDeinit(i);
-                    for (@field(self.dropQueue, field.name).items) |i| {
-                        const originPtr = @field(self.data, field.name).items;
+                    for (@field(self.dropQueue, name).items) |i| {
+                        const originPtr = @field(self.data, name).items;
                         const index: i65 = @as(i65, @intFromPtr(i)) - @as(i65, @intFromPtr(originPtr.ptr));
-                        if (comptime (@import("builtin").mode == .Debug))
+                        if (comptime (@import("builtin").mode == .debug))
                             if (index < 0 or index > originPtr.len)
                                 std.debug.panic(
                                     "Error: {} pointer has index of {d} in an array of length {d}! Please check ownership!",
@@ -360,9 +360,9 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                                         originPtr.len,
                                     },
                                 );
-                        _ = @field(self.data, field.name).swapRemove(@as(usize, @intCast(index)));
+                        _ = @field(self.data, name).swapRemove(@as(usize, @intCast(index)));
                     }
-                    @field(self.dropQueue, field.name).clearAndFree(self.info.gpa);
+                    @field(self.dropQueue, name).clearAndFree(self.info.gpa);
                 }
             }
 
