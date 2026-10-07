@@ -1,4 +1,4 @@
-//! General, self-contained utilities.
+//! General, self-contained utilities.uti
 
 const std = @import("std");
 
@@ -15,7 +15,7 @@ pub fn DeStructInfo(count: comptime_int) type {
     return struct {
         pub const size = count;
 
-        fieldAttributes: [count]std.builtin.Type.StructField.Attributes,
+        fieldAttributes: [count]std.lang.Type.Struct.FieldAttributes,
         fieldNames: [count][]const u8,
         fieldTypes: [count]type,
 
@@ -25,9 +25,9 @@ pub fn DeStructInfo(count: comptime_int) type {
         pub fn expand(self: @This(), add: comptime_int) DeStructInfo(@This().size + add) {
             if (add < 0) @compileError("Error: add is < 0, cannot shrink!");
             var ret: DeStructInfo(@This().size + add) = undefined;
-            for (@typeInfo(@This()).@"struct".fields) |field| {
-                for (@field(self, field.name), 0..) |val, i|
-                    @field(ret, field.name)[i] = val;
+            for (@typeInfo(@This()).@"struct".field_names) |name| {
+                for (@field(self, name), 0..) |val, i|
+                    @field(ret, name)[i] = val;
             }
             return ret;
         }
@@ -47,10 +47,12 @@ pub fn DeStructInfo(count: comptime_int) type {
                 if (attr.default_value_ptr) |_| defaultCount += 1;
             }
 
-            const DefaultContainer = @Tuple(&([_]type{?*const anyopaque} ** defaultCount));
+            const DefaultContainer = @Tuple(&@as([self.fieldAttributes.len]type, @splat(?*const anyopaque)));
             comptime var default: DefaultContainer = undefined;
             var i = 0;
-            for (self.fieldAttributes,) |attr| {
+            for (
+                self.fieldAttributes,
+            ) |attr| {
                 if (attr.default_value_ptr) |ptr| {
                     default[i] = ptr;
                     i += 1;
@@ -60,7 +62,7 @@ pub fn DeStructInfo(count: comptime_int) type {
                 const value: DefaultContainer = default;
             };
             i = 0;
-            var newAttrs: [self.fieldAttributes.len]std.builtin.Type.StructField.Attributes = undefined;
+            var newAttrs: [self.fieldAttributes.len]std.lang.Type.Struct.FieldAttributes = undefined;
             for (self.fieldAttributes, 0..) |attr, j| {
                 newAttrs[j] = attr;
                 if (attr.default_value_ptr) |_| {
@@ -75,19 +77,17 @@ pub fn DeStructInfo(count: comptime_int) type {
     };
 }
 
-pub fn deStruct(comptime T: type) DeStructInfo(@typeInfo(T).@"struct".fields.len) {
+pub fn deStruct(comptime T: type) DeStructInfo(@typeInfo(T).@"struct".field_names.len) {
     comptime {
         const info = switch (@typeInfo(T)) {
             .@"struct" => |i| i,
             else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a structure!"),
         };
-        var ret: DeStructInfo(info.fields.len) = undefined;
-        for (info.fields, 0..) |field, i| {
-            ret.fieldAttributes[i].@"align" = field.alignment;
-            ret.fieldAttributes[i].@"comptime" = field.is_comptime;
-            ret.fieldAttributes[i].default_value_ptr = field.default_value_ptr;
-            ret.fieldTypes[i] = field.type;
-            ret.fieldNames[i] = field.name;
+        var ret: DeStructInfo(info.field_names.len) = undefined;
+        for (info.field_names, info.field_types, info.field_attrs, 0..) |name, Type, attr, i| {
+            ret.fieldAttributes[i] = attr;
+            ret.fieldTypes[i] = Type;
+            ret.fieldNames[i] = name;
         }
         return ret;
     }
@@ -107,8 +107,8 @@ pub fn structEql(a: anytype, b: @TypeOf(a)) bool {
     const tInfo = comptime @typeInfo(T).@"struct";
 
     var eql: bool = true;
-    inline for (tInfo.fields) |field|
-        eql = eql and @field(a, field.name) == @field(b, field.name);
+    inline for (tInfo.field_names) |field|
+        eql = eql and @field(a, field) == @field(b, field);
     return eql;
 }
 
@@ -131,39 +131,32 @@ pub fn Decompose(comptime T: type, targets: []const std.meta.FieldEnum(T)) type 
             else => @compileError("Error: Type '" ++ @typeName(T) ++ "' is not a struct!"),
         };
 
-        var newFieldCount: comptime_int = @typeInfo(T).@"struct".fields.len;
+        var newFieldCount: comptime_int = @typeInfo(T).@"struct".field_names.len;
         for (targets) |target| {
             switch (@typeInfo(@FieldType(T, @tagName(target)))) {
-                .@"struct" => |i| newFieldCount += i.fields.len - 1,
+                .@"struct" => |i| newFieldCount += i.field_names.len - 1,
                 else => @compileError("Error: field '" ++ @tagName(target) ++ "' on type '" ++ @typeName(T) ++ "' is not a struct!"),
             }
         }
 
         var reconstructed: DeStructInfo(newFieldCount) = undefined;
         var i = 0;
-        for (info.fields) |field| {
+        for (info.field_names, info.field_types, info.field_attrs) |fieldName, FieldType, fieldAttr| {
             for (targets) |target| {
-                if (!strEql(@tagName(target), field.name))
+                if (!strEql(@tagName(target), fieldName))
                     continue;
-                for (@typeInfo(field.type).@"struct".fields) |subField| {
-                    reconstructed.fieldTypes[i] = subField.type;
-                    reconstructed.fieldNames[i] = field.name ++ "_" ++ subField.name;
-                    reconstructed.fieldAttributes[i] = .{
-                        .@"align" = subField.alignment,
-                        .@"comptime" = subField.is_comptime,
-                        .default_value_ptr = subField.default_value_ptr,
-                    };
+                const fieldInfo = @typeInfo(FieldType).@"struct";
+                for (fieldInfo.field_names, fieldInfo.field_types, fieldInfo.field_attrs) |subFieldName, SubField, subFieldAttr| {
+                    reconstructed.fieldTypes[i] = SubField;
+                    reconstructed.fieldNames[i] = fieldName ++ "_" ++ subFieldName;
+                    reconstructed.fieldAttributes[i] = subFieldAttr;
                     i += 1;
                 }
                 break;
             } else {
-                reconstructed.fieldTypes[i] = field.type;
-                reconstructed.fieldNames[i] = field.name;
-                reconstructed.fieldAttributes[i] = .{
-                    .@"align" = field.alignment,
-                    .@"comptime" = field.is_comptime,
-                    .default_value_ptr = field.default_value_ptr,
-                };
+                reconstructed.fieldTypes[i] = FieldType;
+                reconstructed.fieldNames[i] = fieldName;
+                reconstructed.fieldAttributes[i] = fieldAttr;
                 i += 1;
             }
         }
@@ -190,22 +183,21 @@ pub fn decompose(
 
     var ret: Decompose(T, targets) = undefined;
 
-    inline for (info.fields) |field| {
-        const contains = comptime std.mem.containsAtLeast(Fields, targets, 1, &.{std.meta.stringToEnum(Fields, field.name).?});
+    inline for (info.fields, info.field_types) |name, U| {
+        const contains = comptime std.mem.containsAtLeast(Fields, targets, 1, &.{std.meta.stringToEnum(Fields, name).?});
         if (contains) {
-            const U = field.type;
 
             const uInfo = switch (@typeInfo(U)) {
                 .@"struct" => |i| i,
-                else => @compileError("Error: field '" ++ field.name ++ "' is not a struct!"),
+                else => @compileError("Error: field '" ++ name ++ "' is not a struct!"),
             };
 
-            for (uInfo.fields) |subfield| {
-                const subName = std.fmt.comptimePrint("{s}_{s}", .{ field.name, subfield.name });
+            for (uInfo.field_names) |subfield| {
+                const subName = std.fmt.comptimePrint("{s}_{s}", .{ name, subfield});
                 if (@hasField(T, subName))
-                    @field(ret, subName) = @field(@field(value, field.name), subfield.name)
+                    @field(ret, subName) = @field(@field(value, name), subfield)
                 else
-                    @field(ret, subfield.name) = @field(@field(value, field.name), subfield.name);
+                    @field(ret, subfield) = @field(@field(value, name), subfield);
             }
         }
     }
@@ -235,13 +227,7 @@ pub fn PtrReinterpret(comptime In: type, comptime Element: type) type {
         if (@sizeOf(inInfo.child) != @sizeOf(Element)) @compileError("Error: size of '" ++ @typeName(In) ++ "' and '" ++ @typeName(Element) ++ "' differ, cannot cast!");
         return @Pointer(
             inInfo.size,
-            .{
-                .@"addrspace" = inInfo.address_space,
-                .@"align" = inInfo.alignment,
-                .@"allowzero" = inInfo.is_allowzero,
-                .@"const" = inInfo.is_const,
-                .@"volatile" = inInfo.is_volatile,
-            },
+            inInfo.attrs,
             Element,
             null,
         );

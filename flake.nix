@@ -3,10 +3,23 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+
+    zig-flake = {
+      url = "github:silversquirl/zig-flake";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    zls = {
+      url = "github:zigtools/zls";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        zig-flake.follows = "zig-flake";
+      };
+    };
   };
 
   outputs =
-    { self, nixpkgs }:
+    inputs@{ self, nixpkgs, ... }:
     let
       systems = [
         "x86_64-linux"
@@ -18,10 +31,18 @@
       forEachSystem = nixpkgs.lib.genAttrs systems;
     in
     {
-      devShells = forEachSystem (system: let 
-        pkgs = nixpkgs.legacyPackages.${system};
-      in {
-        default = import ./shell.nix { inherit pkgs; };
-      });
+      devShells = forEachSystem (
+        system:
+        let
+          zig-override = final: prev: {
+            zls = inputs.zls.packages.${system}.default;
+            zig = inputs.zig-flake.packages.${system}.default;
+          };
+          pkgs = nixpkgs.legacyPackages.${system}.extend zig-override;
+        in
+        {
+          default = pkgs.callPackage ./shell.nix {}; 
+        }
+      );
     };
 }
