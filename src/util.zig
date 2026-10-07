@@ -108,7 +108,7 @@ pub fn structEql(a: anytype, b: @TypeOf(a)) bool {
 
     var eql: bool = true;
     inline for (tInfo.field_names) |field|
-        eql = eql and @field(a, field) == @field(b, field.name);
+        eql = eql and @field(a, field) == @field(b, field);
     return eql;
 }
 
@@ -183,22 +183,21 @@ pub fn decompose(
 
     var ret: Decompose(T, targets) = undefined;
 
-    inline for (info.fields) |field| {
-        const contains = comptime std.mem.containsAtLeast(Fields, targets, 1, &.{std.meta.stringToEnum(Fields, field.name).?});
+    inline for (info.fields, info.field_types) |name, U| {
+        const contains = comptime std.mem.containsAtLeast(Fields, targets, 1, &.{std.meta.stringToEnum(Fields, name).?});
         if (contains) {
-            const U = field.type;
 
             const uInfo = switch (@typeInfo(U)) {
                 .@"struct" => |i| i,
-                else => @compileError("Error: field '" ++ field.name ++ "' is not a struct!"),
+                else => @compileError("Error: field '" ++ name ++ "' is not a struct!"),
             };
 
-            for (uInfo.fields) |subfield| {
-                const subName = std.fmt.comptimePrint("{s}_{s}", .{ field.name, subfield.name });
+            for (uInfo.field_names) |subfield| {
+                const subName = std.fmt.comptimePrint("{s}_{s}", .{ name, subfield});
                 if (@hasField(T, subName))
-                    @field(ret, subName) = @field(@field(value, field.name), subfield.name)
+                    @field(ret, subName) = @field(@field(value, name), subfield)
                 else
-                    @field(ret, subfield.name) = @field(@field(value, field.name), subfield.name);
+                    @field(ret, subfield) = @field(@field(value, name), subfield);
             }
         }
     }

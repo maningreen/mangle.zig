@@ -600,8 +600,8 @@ pub fn aliasName(comptime T: type) [:0]const u8 {
             .@"struct" => |i| i,
             else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not aliased!"),
         };
-        for (info.fields) |field| {
-            if (!isMetadata(field.name)) return field.name;
+        for (info.field_names) |field| {
+            if (!isMetadata(field)) return field;
         }
     }
 }

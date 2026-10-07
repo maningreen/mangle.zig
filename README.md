@@ -12,8 +12,8 @@ This should fetch it, then add the following to your `build.zig` and import `man
 
 ```zig
 const mangle_dependency = b.dependency("mangle", .{ });
-const mangle_artifact = mangle_dependency.artifact("mangle");
-my_exe.root_module.linkLibrary(mangle_artifact);
+const mangle = mangle_dependency.module("mangle");
+my_exe.root_module.addImport("mangle", mangle);
 ```
 
 After this, you should be able to do `@import("mangle")`
@@ -134,7 +134,7 @@ Processing is how behavior is defined, it's simply a function, here's an example
 ```zig
 pub fn process(comptime T: type, value: *T, registry_information: anytype) !void {
     // print all fields
-    inline for (@typeInfo(T).@"struct".fields) |field|
+    inline for (@typeInfo(T).@"struct".field_names) |field|
         std.debug.print("{any}", .{ @field(value.*, field )});
 }
 ```
