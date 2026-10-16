@@ -20,6 +20,8 @@ pub fn build(b: *std.Build) void {
         "flags",
     };
 
+    const check_step = b.step("check", "checks all examples");
+
     const exampleBuildStep = b.step("examples", "builds all examples");
     const runExampleFmt = "run-{s}";
     const runExampleDescFmt = "runs the {s} example";
@@ -31,6 +33,7 @@ pub fn build(b: *std.Build) void {
             .mangle = lib,
         });
         const installExe = b.addInstallArtifact(exe, .{});
+        check_step.dependOn(&exe.step);
         exampleBuildStep.dependOn(&installExe.step);
         const runStep = b.step(
             std.fmt.comptimePrint(runExampleFmt, .{example}),
