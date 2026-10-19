@@ -10,11 +10,17 @@ pub const pathing = struct {
     pub const path_delimiter = '_';
 };
 const formats = struct {
-    const composed = "__internal_registry_composed_flag__";
-    const leaf = "__internal_registry_leaf_flag__";
-    const dissolve = "__internal_registry_dissolve_flag__";
-    const owned = "__internal_registry_ownership_flag__";
-    const identity = "__internal_registry_ownership_path__";
+    pub const composed = "__internal_registry_composed_flag__";
+    pub const leaf = "__internal_registry_leaf_flag__";
+    pub const dissolve = "__internal_registry_dissolve_flag__";
+    pub const owned = "__internal_registry_ownership_flag__";
+    pub const identity = "__internal_registry_ownership_path__";
+
+    fn isFormat(str: []const u8) bool {
+        inline for (@typeInfo(formats).@"struct".decl_names) |decl| {
+            if (std.mem.eql(u8, @field(formats, decl), str)) return true;
+        } else return false;
+    }
 };
 
 const voidValue: void = {};
@@ -548,6 +554,14 @@ pub fn Path(comptime T: type) type {
     return PathInternal(T, "");
 }
 
+fn PathData(comptime prefix: []const u8, comptime Original: type) type {
+    return struct {
+        const __internal_registry_type_path__ = prefix;
+        const __InternalRegistryOriginalType__ = Original;
+        const __internal_registry_leaf_flag__ = {};
+    };
+}
+
 fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
     comptime {
         switch (@typeInfo(T)) {
@@ -565,8 +579,8 @@ fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
         }
 
         var deconstructed = util.deStruct(T);
-        for (deconstructed.fieldTypes, deconstructed.fieldNames, 0..) |U, name, i| {
-            switch (fieldFlag(U)) {
+        for (deconstructed.fieldTypes, deconstructed.fieldNames, getFieldFlags(T), 0..) |U, name, flag, i| {
+            switch (flag) {
                 .owned => {
                     const newPrefix = prefix ++ .{pathing.path_delimiter} ++ name;
                     deconstructed.fieldTypes[i] = PathInternal(U, newPrefix);
@@ -577,11 +591,7 @@ fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
         var new = deconstructed.expand(1);
         const i = deconstructed.fieldNames.len;
         new.fieldNames[i] = formats.identity;
-        new.fieldTypes[i] = struct {
-            const __internal_registry_type_path__ = prefix;
-            const __InternalRegistryOriginalType__ = T;
-            const __internal_registry_leaf_flag__ = {};
-        };
+        new.fieldTypes[i] = PathData(prefix, T);
         new.fieldAttributes[i] = .{};
         return new.Construct();
     }
@@ -646,7 +656,7 @@ pub fn aliasName(comptime T: type) [:0]const u8 {
 
 fn isMetadata(str: []const u8) bool {
     inline for (@typeInfo(formats).@"struct".decl_names) |decl| {
-        if (util.strEql(decl, str)) return true;
+        if (util.strEql(@field(formats, decl), str)) return true;
     } else return false;
 }
 
@@ -658,7 +668,7 @@ pub fn getFieldFlags(comptime T: type) [@typeInfo(T).@"struct".field_names.len]F
         else => util.typeError(T, .@"struct"),
     };
     var flags: [info.field_names.len]Flags = undefined;
-    for (info.field_types, info.field_attrs, 0..) |U, attr, i| {
+    inline for (info.field_types, info.field_attrs, 0..) |U, attr, i| {
         lbl: switch (fieldFlag(U)) {
             inline .leaf, .dissolve, .composed, .owned => |tag| flags[i] = tag,
             .implicit => continue :lbl if (attr.@"comptime") .leaf else .owned,
@@ -667,4 +677,170 @@ pub fn getFieldFlags(comptime T: type) [@typeInfo(T).@"struct".field_names.len]F
     for (flags) |value|
         std.debug.assert(value != .implicit);
     return flags;
+}
+
+test getFieldFlags {
+    const T = struct { index: usize, comptime TypeAlias: Alias(type, "value") = .{ .value = usize }, substructure: struct {
+        value: usize,
+    } };
+
+    const fieldFlags = comptime getFieldFlags(T);
+    const targets = [_]Flags{ .leaf, .dissolve, .owned };
+    inline for (fieldFlags, targets) |input, target| {
+        try std.testing.expectEqual(target, input);
+    }
+}
+
+test isMetadata {
+    // 'format', and 'is valid'
+    const Format = struct { []const u8, bool };
+    const cases = [_]Format{
+        .{ formats.composed, true },
+        .{ formats.leaf, true },
+        .{ formats.dissolve, true },
+        .{ formats.owned, true },
+        .{ formats.identity, true },
+        .{ pathing.originalSubfield, false },
+        .{ pathing.pathSubField, false },
+        .{ "", false },
+        .{ "__simple_test_case__", false },
+    };
+
+    inline for (cases) |value| {
+        if (value.@"1")
+            try std.testing.expect(isMetadata(value.@"0"))
+        else
+            try std.testing.expect(!isMetadata(value.@"0"));
+    }
+}
+
+test OriginalType {
+    const types = [_]type{
+        u32,
+        usize,
+        f32,
+        []const u8,
+        []const type,
+        [4]type,
+        @Vector(5, bool),
+        std.mem.Allocator,
+        std.ArrayList(usize),
+    };
+
+    const name = "test";
+
+    inline for (types) |T|
+        try std.testing.expect(T != Alias(T, name));
+}
+
+fn fieldsEql(comptime T: type, comptime U: type) ?enum { name, type } {
+    const tinfo = @typeInfo(T).@"struct";
+    const uinfo = @typeInfo(U).@"struct";
+    const value = comptime for (tinfo.field_names, uinfo.field_names, tinfo.field_types, uinfo.field_types) |nameT, nameU, TT, TU| {
+        if (!std.mem.eql(u8, nameT, nameU)) break .{ nameT, nameU };
+        if (@typeInfo(TT) == .@"struct") {
+            if (fieldsEql(TT, TU)) |_| break .{ TT, TU };
+        } else if (TT != TU) break .{ TT, TU };
+    } else null;
+    if (value == null) return value;
+    switch (@TypeOf(value)) {
+        struct { []const u8, []const u8 } => {
+            std.testing.failPrint("{s}, {s}", value);
+            return .name;
+        },
+        else => {
+            std.testing.failPrint("{}, {}", value);
+            return .type;
+        },
+    }
+    return null;
+}
+
+test Path {
+    const T = struct {
+        value: u32,
+        substructure: struct {
+            doublesub: struct {
+                subvalue: usize,
+            },
+        },
+    };
+
+    const Pathed = Path(T);
+
+    // expanded structure.
+    const Expected = struct {
+        value: u32,
+        substructure: struct {
+            doublesub: struct {
+                subvalue: usize,
+                __internal_registry_ownership_path__: PathData("..substructure.doublesub", T),
+            },
+            __internal_registry_ownership_path__: PathData("..substructure", T),
+        },
+        __internal_registry_ownership_path__: PathData(".", T),
+    };
+
+    try std.testing.expectEqual(null, fieldsEql(Pathed, Expected));
+}
+
+test aliasName {
+    const names: []const []const u8 = &.{
+        "a",
+        "b",
+        "c",
+        "d",
+        "",
+        "test",
+        "another_case",
+        "spaces this time",
+        "1number",
+        " space in front and end ",
+        \\a
+        \\newline
+        ,
+        "---------",
+    };
+
+    const TestType = void;
+    inline for (names) |name| {
+        const T = Alias(TestType, name);
+        try std.testing.expectEqualStrings(name, comptime aliasName(T));
+    }
+}
+
+test ApplyMetadata {
+    const Case = struct {
+        initial: type,
+        metadata: []const u8,
+        expected: type,
+    };
+
+    const cases: []const Case = &.{
+        .{
+            .initial = struct {},
+            .metadata = "test",
+            .expected = struct { @"test": void },
+        },
+        .{
+            .initial = struct { u32 },
+            .metadata = "null",
+            .expected = struct { @"0": u32, null: void },
+        },
+        .{
+            .initial = struct {
+                substructure: struct { u32 },
+            },
+            .metadata = "__internal_registry_leaf_flag__",
+            .expected = struct {
+                substructure: struct { u32 },
+                __internal_registry_leaf_flag__: void,
+            },
+        },
+    };
+
+    inline for (cases) |case| {
+        const Outcome = ApplyMetadata(case.initial, case.metadata);
+        try std.testing.expectEqual(null, fieldsEql(case.expected, Outcome));
+    }
 }
