@@ -260,16 +260,17 @@ The following relationships could all be possible:
 If there're any more relationships I missed, please make an [issue](https://github.com/maningreen/mangle.zig/issues)
 
 There's a **flag** for each of these cases, respectively:
-- [Own(T)](#ownt)
-- [Compose(T)](#composet)
-- [Leaf(T)](#leaft)
-- [Alias(T)](#aliast)
+    - [owned](#ownt)
+    - [composed](#composet)
+    - [leaf](#leaft)
+    - [dissolve](#aliast)
+
+Note, if unspecified, it's [implicit](#implicit), which defaults to ownership *most of the time*.[^comptime-fields]
 
 ### Own(T)
 
-Ownership is the default behavior for substructures.
+Ownership is the default behavior for substructures[^comptime-fields].
 Ownership can explicitly be stated with `Own(T)`.
-`Own(T)` is identity, and only should be used for clarity.
 
 ```zig
 const T = struct {
@@ -331,6 +332,7 @@ A system with `U` **will** match with `T.subfield` (like ownership)
 
 > [!Note]
 > Creating an instance of `T` cannot explicitly initialize `subfield` as `U`, because `Leaf(U) != U`
+> See [here]() for how to.
 
 ### Alias(T)
 
@@ -392,6 +394,33 @@ const ApplyVelocity = struct {
 };
 ```
 
+### Flagged Instantiation
+
+Because `Own(T) != T`, `Leaf(T) != T`, and `Compose(T) != T` you cannot instantiate `Leaf(T)` with `T{}`.
+The **only** time this isn't applicable is when the flag is implicit.
+
+Given the following structure, here's how to instantiate it with explicit flags.
+```zig
+const T = struct {
+    number: u32,
+};
+```
+
+```zig
+const instance = .{ .number = 42, };
+```
+
+```zig 
+// replace `Leaf(T)` with your flag / type.
+const instance = Leaf(T){ .number = 42, };
+```
+
+```zig
+// `leaf()` is the runtime version of `Leaf()`
+// This applies to all other flags.
+const instance = leaf(T{ .number = 42 });
+```
+
 ### Other Notes
 
 #### Comptime Fields
@@ -400,6 +429,10 @@ Due to the runtime immutibility of a comptime field, certain operations, particu
 For example, [Compose(T)](#composet) makes no sense for a comptime field, and therefore is illegal.
 This also applies to ownership, as it may discard the immutibility down the line.
 To remedy this, apply [Leaf(T)](#leaft) to any comptime field.
+
+### Footnotes
+
+[^comptime-fields]
 
 ## Docs
 
