@@ -118,7 +118,7 @@ Terminology:
 ### Definition
 
 For a system to qualify as a system it must have the following declarations:
-- requirements: [Signature](#signature)
+- requirements: [Signature](#signatures)
     - Signatures are how a system creates type specifications
 - process: `fn (comptime T: type, value: *T, registry_information: anytype)`
     - called on `Registry().process`
@@ -186,8 +186,41 @@ pub const requirements: mangle.system.Signature = .{
 };
 ```
 
-> [!NOTE]
-> Signature API might alter in order to allow more advanced conditions and configurations
+You may also use the builtin function `mangle.system.Signature.fromStruct`, which has the following syntax, semantically equal to the above.
+```zig
+pub const requirements = mangle.system.Signature.fromStruct(struct {
+    message: []const u8,
+})
+```
+
+#### Field Statuses
+
+Statuses are how a signature field should be interpreted.
+
+In order to facilitate more advanced behavior withing a signature, a signature field may have a `status`.
+By default, the status is `.required`, but may be altered.
+
+The following is a table of all statuses.
+
+| Status | Behavior |
+|-|-|
+| `.required` | Default behavior, field is necessary to match with the system |
+| `.optional` | Field is not necessary, but will be named if present. Check with `@hasField(T, name)` to see if present |
+| `.excluded` | If the field is present, fail matching. The `name` field is unused with this status. |
+
+An example of a complex signature is as follows.
+```zig
+pub const requirements: mangle.system.Signature = .{
+    .fields = &.{
+        // Explicit setting of `.status` to `.required` is unnecessary, but can show intent.
+        .{ .name = "message", .type = []const u8, .status = .required },
+        .{ .name = "sender", .type = u32, .status = .optional },
+        // The `name` field on this one is unused, and could technically be anything
+        // You should still provide a name for readability's sake.
+        .{ .name = "invalid", .type = void, .status = .excluded },
+    },
+};
+```
 
 #### Type System Qualification
 
@@ -426,13 +459,29 @@ const instance = leaf(T{ .number = 42 });
 #### Comptime Fields
 
 Due to the runtime immutibility of a comptime field, certain operations, particuarly ones that may discard the immutibility are illegal.
-For example, [Compose(T)](#composet) makes no sense for a comptime field, and therefore is illegal.
-This also applies to ownership, as it may discard the immutibility down the line.
-To remedy this, apply [Leaf(T)](#leaft) to any comptime field.
+For example, [Own(T)](#ownt) recursed down the structure, and therefore may discard the immutibility: therefore it's illegal.
+To remedy this, apply [Leaf(T)](#leaft) to any comptime field & it serves as the default.
+
+The following is what's permitted on comptime fields.
+| Flag | Is Allowed |
+|-|-|
+| [Leaf(T)](#leaft) | Default |
+| [Alias(T)](#aliast) | Legal |
+| [Compose(T)](#composet) | Illegal |
+| [Own(T)](#ownt) | Illegal |
+
+#### Unions
+
+Currently[^1] unions are classified as a `leaf`, and therefore aren't recursed into, or even considered to be able to.
+The reason is because we can't 100% sure assert that a union has particular fields at comptime.
+If you want to remedy this, the following is suggested.
+
+```zig
+```
 
 ### Footnotes
 
-[^comptime-fields]
+[^comptime-fields] Comptime fields default to `leaf` behavior. See more [here](#comptime-fields)
 
 ## Docs
 
