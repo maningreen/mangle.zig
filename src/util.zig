@@ -97,21 +97,6 @@ pub fn strEql(a: []const u8, b: []const u8) bool {
     return std.mem.eql(u8, a, b);
 }
 
-/// goes through the fields and applies the `==` operator
-///
-///> **WARNING**:
-///> - does not (yet) cover pointers and substructure fields
-pub fn structEql(a: anytype, b: @TypeOf(a)) bool {
-    const T = @TypeOf(a);
-    std.debug.assert(@typeInfo(T) == .@"struct");
-    const tInfo = comptime @typeInfo(T).@"struct";
-
-    var eql: bool = true;
-    inline for (tInfo.field_names) |field|
-        eql = eql and @field(a, field) == @field(b, field);
-    return eql;
-}
-
 /// Given a structure and fields, decomposes the structure boundaries between them, raising sub-fields
 ///
 ///> **NOTE**:
