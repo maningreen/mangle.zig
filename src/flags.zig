@@ -631,7 +631,10 @@ pub fn OriginalType(comptime T: type) type {
     }
 
     if (@hasField(T, formats.identity)) {
-        return @field(@FieldType(T, formats.identity), pathing.originalSubfield);
+        return @field(
+            @FieldType(T, formats.identity),
+            pathing.originalSubfield,
+        );
     } else return T;
 }
 
@@ -679,6 +682,30 @@ pub fn getFieldFlags(comptime T: type) [@typeInfo(T).@"struct".field_names.len]F
     return flags;
 }
 
+/// internal testing function
+fn fieldsEql(comptime T: type, comptime U: type) ?enum { name, type } {
+    const tinfo = @typeInfo(T).@"struct";
+    const uinfo = @typeInfo(U).@"struct";
+    const value = comptime for (tinfo.field_names, uinfo.field_names, tinfo.field_types, uinfo.field_types) |nameT, nameU, TT, TU| {
+        if (!std.mem.eql(u8, nameT, nameU)) break .{ nameT, nameU };
+        if (@typeInfo(TT) == .@"struct") {
+            if (fieldsEql(TT, TU)) |_| break .{ TT, TU };
+        } else if (TT != TU) break .{ TT, TU };
+    } else null;
+    if (value == null) return value;
+    switch (@TypeOf(value)) {
+        struct { []const u8, []const u8 } => {
+            std.testing.failPrint("{s}, {s}", value);
+            return .name;
+        },
+        else => {
+            std.testing.failPrint("{}, {}", value);
+            return .type;
+        },
+    }
+    return null;
+}
+
 test getFieldFlags {
     const T = struct { index: usize, comptime TypeAlias: Alias(type, "value") = .{ .value = usize }, substructure: struct {
         value: usize,
@@ -716,44 +743,27 @@ test isMetadata {
 
 test OriginalType {
     const types = [_]type{
-        u32,
-        usize,
+        struct { u32 },
+        struct { index: usize },
+        std.mem.Allocator,
+        std.ArrayList(usize),
+        struct {
+            value: u32,
+            index: usize,
+            substructure: struct { i32 },
+        },
+        // for fundamental types, we should expect no diff
         f32,
         []const u8,
         []const type,
         [4]type,
         @Vector(5, bool),
-        std.mem.Allocator,
-        std.ArrayList(usize),
     };
 
-    const name = "test";
-
-    inline for (types) |T|
-        try std.testing.expect(T != Alias(T, name));
-}
-
-fn fieldsEql(comptime T: type, comptime U: type) ?enum { name, type } {
-    const tinfo = @typeInfo(T).@"struct";
-    const uinfo = @typeInfo(U).@"struct";
-    const value = comptime for (tinfo.field_names, uinfo.field_names, tinfo.field_types, uinfo.field_types) |nameT, nameU, TT, TU| {
-        if (!std.mem.eql(u8, nameT, nameU)) break .{ nameT, nameU };
-        if (@typeInfo(TT) == .@"struct") {
-            if (fieldsEql(TT, TU)) |_| break .{ TT, TU };
-        } else if (TT != TU) break .{ TT, TU };
-    } else null;
-    if (value == null) return value;
-    switch (@TypeOf(value)) {
-        struct { []const u8, []const u8 } => {
-            std.testing.failPrint("{s}, {s}", value);
-            return .name;
-        },
-        else => {
-            std.testing.failPrint("{}, {}", value);
-            return .type;
-        },
+    inline for (types) |T| {
+        const Pathed = Path(T);
+        try std.testing.expect(T == OriginalType(Pathed));
     }
-    return null;
 }
 
 test Path {
