@@ -40,7 +40,8 @@ const WrappingParticle = struct {
 
 const ReplicatingWrap = struct {
     particle: mangle.Compose(WrappingParticle),
-    comptime copy: mangle.Leaf(ReplicateData) = .{
+    // by default, since it's a comptime field, it's a leaf.
+    comptime copy: ReplicateData = .{
         .target_char = mangle.alias(Char, 'w'),
         .child = WrappingParticle,
     },

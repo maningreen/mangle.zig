@@ -399,17 +399,7 @@ const ApplyVelocity = struct {
 Due to the runtime immutibility of a comptime field, certain operations, particuarly ones that may discard the immutibility are illegal.
 For example, [Compose(T)](#composet) makes no sense for a comptime field, and therefore is illegal.
 This also applies to ownership, as it may discard the immutibility down the line.
-To remedy this, default behavior is [Leaf(T)](#leaft).
-
-The following table provides a reference for legal and illegal behavior.
-
-| Flag | Is Valid On Comptime Fields |
-|-|-|
-| [Compose(T)](#composet) | invalid |
-| [Compose(T)](#composet) | invalid |
-| [Leaf(T)](#leaft) | default behavior |
-| [Alias(T)](#aliast) | valid |
-
+To remedy this, apply [Leaf(T)](#leaft) to any comptime field.
 
 ## Docs
 
