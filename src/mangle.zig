@@ -38,10 +38,10 @@ fn applySystem(
         else => @compileError("Error: Type '" ++ @typeName(T) ++ "' is not a struct!"),
     };
 
-    inline for (info.field_names, info.field_types) |name, U| {
+    inline for (info.field_names, info.field_types, comptime flags.getFieldFlags(T)) |name, U, flag| {
         switch (@typeInfo(U)) {
             .@"struct" => {
-                switch (comptime flags.fieldFlag(U)) {
+                switch (comptime flag) {
                     .owned => {
                         switch (@typeInfo(U)) {
                             .@"struct" => {
@@ -58,7 +58,7 @@ fn applySystem(
                         }
                     },
                     .leaf, .dissolve => continue,
-                    else => unreachable,
+                    else => std.debug.panic("Error, found flag {}", .{ flag }),
                 }
             },
             else => continue,

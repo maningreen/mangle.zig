@@ -124,16 +124,17 @@ pub const Signature = struct {
                 else => requirement.type,
             };
 
-            inline for (info.field_types) |Type| {
+            inline for (info.field_types, info.field_attrs) |Type, attr| {
                 switch (flags.fieldFlag(Type)) {
                     .composed => unreachable,
                     else => {
                         const Original = comptime if (flags.isPathed(Type)) flags.OriginalType(Type) else Type;
-                        const contains = comptime switch (flags.fieldFlag(requirement.type)) {
+                        const contains = comptime lb: switch (flags.fieldFlag(requirement.type)) {
                             .owned => U == Original,
                             .leaf => U == Original,
                             .dissolve => U == Original,
                             .composed => unreachable,
+                            .implicit => continue :lb if (attr.@"comptime") .leaf else .owned,
                         };
                         switch (requirement.status) {
                             .required => if (contains) break,
@@ -201,7 +202,7 @@ pub const Signature = struct {
                             continue :field;
                         }
                     },
-                    .leaf, .owned => {
+                    .leaf, .owned, .implicit => {
                         if (Original == Flattened) {
                             info.fieldNames[i] = field.name;
                             info.fieldTypes[i] = field.type;

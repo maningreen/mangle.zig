@@ -13,6 +13,7 @@ const formats = struct {
     const composed = "__internal_registry_composed_flag__";
     const leaf = "__internal_registry_leaf_flag__";
     const dissolve = "__internal_registry_dissolve_flag__";
+    const owned = "__internal_registry_ownership_flag__";
     const identity = "__internal_registry_ownership_path__";
 };
 
@@ -35,6 +36,9 @@ pub const Flags = enum {
     /// Used to differentiate types, similar to `leaf` in matching, and compose after
     /// When dissolving, must have *one* field only
     dissolve,
+
+    /// Used for default values.
+    implicit,
 };
 
 /// used to tag a type with a metadata tag
@@ -84,7 +88,7 @@ pub fn ApplyMetadata(comptime T: type, name: []const u8) type {
 pub fn Leaf(comptime T: type) type {
     switch (@typeInfo(T)) {
         .@"struct" => {
-            if (fieldFlag(T) != .owned)
+            if (fieldFlag(T) != .implicit)
                 @compileError("Error type '" ++ @typeName(T) ++ "' Already has metadata flag!");
             return ApplyMetadata(T, formats.leaf);
         },
@@ -94,19 +98,14 @@ pub fn Leaf(comptime T: type) type {
     }
 }
 
-/// used to tag a type as ownership (default behavior)
-///
-///> **NOTE**:
-///> - can be omitted with no semantic differences
-///> - Intended for explicit ownership for readability
-///> - `Own(T) == T`
+/// used to tag a type as explicit ownership (default behavior)
 pub fn Own(comptime T: type) type {
     comptime {
         switch (fieldFlag(T)) {
-            .composed, .leaf => @compileError("Error, type '" ++ @typeName(T) ++ "' Is already marked as" ++ @tagName(fieldFlag(T))),
+            .owned, .composed, .leaf => @compileError("Error, type '" ++ @typeName(T) ++ "' Is already marked as" ++ @tagName(fieldFlag(T))),
             else => {},
         }
-        return T;
+        return ApplyMetadata(T, formats.owned);
     }
 }
 
@@ -270,10 +269,10 @@ pub fn fieldFlag(comptime T: type) Flags {
         .@"struct" => {},
         else => return .leaf,
     }
-    inline for (&.{ .leaf, .composed, .dissolve }) |flag| {
+    inline for (&.{ .leaf, .composed, .dissolve, .owned }) |flag| {
         const flagMeta = @field(formats, @tagName(flag));
         if (@hasField(T, flagMeta)) return flag;
-    } else return .owned;
+    } else return .implicit;
 }
 
 /// Applies the `.compose` flag to a type
@@ -303,7 +302,7 @@ pub fn fieldFlag(comptime T: type) Flags {
 pub fn Compose(comptime T: type) type {
     comptime {
         switch (fieldFlag(T)) {
-            .owned => {},
+            .implicit => {},
             else => @compileError("Error: type '" ++ @typeName(T) ++ "' is already flagged!"),
         }
         return ApplyMetadata(T, formats.composed);
@@ -345,7 +344,7 @@ pub fn Compose(comptime T: type) type {
 pub fn Dissolve(comptime T: type) type {
     comptime {
         switch (fieldFlag(T)) {
-            .owned => {},
+            .implicit => {},
             else => |v| @compileError("Error: type '" ++ @typeName(T) ++ "' is already flagged '" ++ @tagName(fieldFlag(v))),
         }
         switch (@typeInfo(T)) {
@@ -610,4 +609,23 @@ fn isMetadata(str: []const u8) bool {
     inline for (@typeInfo(formats).@"struct".decl_names) |decl| {
         if (util.strEql(decl, str)) return true;
     } else return false;
+}
+
+/// It's asserted `getFieldFlags(T)[i] != .implicit`
+/// Returns default values if it is implicit.
+pub fn getFieldFlags(comptime T: type) [@typeInfo(T).@"struct".field_names.len]Flags {
+    const info = switch (@typeInfo(T)) {
+        .@"struct" => |t| t,
+        else => @compileError("Error, type '" ++ @typeName(T) ++ "' is not a stuct!"),
+    };
+    var flags: [info.field_names.len]Flags = undefined;
+    for (info.field_types, info.field_attrs, 0..) |U, attr, i| {
+        lbl: switch (fieldFlag(U)) {
+            inline .leaf, .dissolve, .composed, .owned => |tag| flags[i] = tag,
+            .implicit => continue :lbl if (attr.@"comptime") .leaf else .owned,
+        }
+    }
+    for (flags) |value|
+        std.debug.assert(value != .implicit);
+    return flags;
 }
