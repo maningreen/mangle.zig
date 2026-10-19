@@ -37,7 +37,7 @@ pub const Flags = enum {
     /// When dissolving, must have *one* field only
     dissolve,
 
-    /// Used for default values.
+    /// Used for default behaviors. `leaf` for comptime fields `owned` for non-comptime.
     implicit,
 };
 
@@ -50,29 +50,50 @@ pub const Flags = enum {
 ///
 ///>**TODO**:
 ///> -  - [ ] add format checking
+///
+///>**NOTE**:
+///> - for a runtime version: see [applyMetadata](#mangle.flags.applyMetadata)
 pub fn ApplyMetadata(comptime T: type, name: []const u8) type {
-    comptime {
-        // deconstruct T
-        const info = switch (@typeInfo(T)) {
-            .@"struct" => |sinfo| sinfo,
-            else => @compileError("Error, type " ++ @typeName(T) ++ " is not a type which can be composed!"),
-        };
+    // deconstruct T
+    const info = switch (@typeInfo(T)) {
+        .@"struct" => |sinfo| sinfo,
+        else => util.typeError(T, .@"struct"),
+    };
 
-        // construct structure information reflecting the input
-        var destructed = util.deStruct(T).expand(1);
-        const i = @TypeOf(destructed).size - 1;
-        destructed.fieldAttributes[i] = .{ .default_value_ptr = &voidValue };
-        destructed.fieldTypes[i] = void;
-        destructed.fieldNames[i] = name;
+    // construct structure information reflecting the input
+    var destructed = util.deStruct(T).expand(1);
+    const i = @TypeOf(destructed).size - 1;
+    destructed.fieldAttributes[i] = .{ .default_value_ptr = &voidValue };
+    destructed.fieldTypes[i] = void;
+    destructed.fieldNames[i] = name;
 
-        return @Struct(
-            info.layout,
-            info.backing_integer,
-            &destructed.fieldNames,
-            &destructed.fieldTypes,
-            &destructed.fieldAttributes,
-        );
+    return @Struct(
+        info.layout,
+        info.backing_integer,
+        &destructed.fieldNames,
+        &destructed.fieldTypes,
+        &destructed.fieldAttributes,
+    );
+}
+
+pub fn applyMetadata(value: anytype, comptime name: []const u8) ApplyMetadata(@TypeOf(value), name) {
+    const T: type = @TypeOf(value);
+    const Altered = ApplyMetadata(T, name);
+    const info = switch (@typeInfo(T)) {
+        .@"struct" => |i| i,
+        else => util.typeError(T, .@"struct"),
+    };
+
+    var ret: Altered = undefined;
+    std.debug.assert(@FieldType(Altered, name) == void); // if this fails, report an issue.
+    @field(ret, name) = {};
+
+    inline for (info.field_names, info.field_types) |fieldName, FieldType| {
+        std.debug.assert(@FieldType(Altered, fieldName) == FieldType); // if this fails, report an issue.
+
+        @field(ret, fieldName) = @field(value, fieldName);
     }
+    return ret;
 }
 
 /// used to tag a type as a leaf
@@ -84,7 +105,7 @@ pub fn ApplyMetadata(comptime T: type, name: []const u8) type {
 ///> **NOTE**:
 ///> - `Leaf(T)` where `@typeInfo(T) != .@"struct"` is identity
 ///> -  [See also `Compose`](#mangle.flags.Compose)
-///> -  TODO: allow 'unwrapping'
+///> -  For a runtime version, see [leaf](#mangle.flags.leaf)
 pub fn Leaf(comptime T: type) type {
     switch (@typeInfo(T)) {
         .@"struct" => {
@@ -98,6 +119,10 @@ pub fn Leaf(comptime T: type) type {
     }
 }
 
+pub fn leaf(value: anytype) Leaf(@TypeOf(value)) {
+    return applyMetadata(value, @tagName(Flags.leaf));
+}
+
 /// used to tag a type as explicit ownership (default behavior)
 pub fn Own(comptime T: type) type {
     comptime {
@@ -107,6 +132,10 @@ pub fn Own(comptime T: type) type {
         }
         return ApplyMetadata(T, formats.owned);
     }
+}
+
+pub fn own(value: anytype) Leaf(@TypeOf(value)) {
+    return applyMetadata(value, @tagName(Flags.own));
 }
 
 /// Given a type T
@@ -127,7 +156,7 @@ pub fn Reduce(comptime T: type, comptime flag: Flags) type {
     comptime {
         const info = switch (@typeInfo(T)) {
             .@"struct" => |i| i,
-            else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
+            else => util.typeError(T, .@"struct"),
         };
         var deconstructed = util.deStruct(T);
         // TODO: make this account for recursion
@@ -216,7 +245,7 @@ pub fn reduce(value: anytype, comptime flag: Flags) Reduce(@TypeOf(value), flag)
     const T = @TypeOf(value);
     const info = switch (@typeInfo(T)) {
         .@"struct" => |i| i,
-        else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
+        else => util.typeError(T, .@"struct"),
     };
 
     var ret: Reduce(T, flag) = undefined;
@@ -307,6 +336,10 @@ pub fn Compose(comptime T: type) type {
         }
         return ApplyMetadata(T, formats.composed);
     }
+}
+
+pub fn compose(value: anytype) Leaf(@TypeOf(value)) {
+    return applyMetadata(value, @tagName(Flags.composed));
 }
 
 /// Applies the `.dissolve` flag to a type
@@ -522,7 +555,13 @@ fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
             else => return T,
         }
         if (@hasField(T, formats.identity)) {
-            @compileError(std.fmt.comptimePrint("Type '{}' already has a path: '{any}'. Please report this as an issue.", .{ OriginalType(T), @typeInfo(@FieldType(T, formats.identity)).@"struct".decls }));
+            @compileError(std.fmt.comptimePrint(
+                "Type '{}' already has a path: '{any}'. Please report this as an issue.",
+                .{
+                    OriginalType(T),
+                    @typeInfo(@FieldType(T, formats.identity)).@"struct".decls,
+                },
+            ));
         }
 
         var deconstructed = util.deStruct(T);
@@ -555,7 +594,7 @@ fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
 pub fn path(value: anytype) util.PtrReinterpret(@TypeOf(value), Path(@typeInfo(@TypeOf(value)).pointer.child)) {
     const info = switch (@typeInfo(@TypeOf(value))) {
         .pointer => |i| i,
-        else => @compileError("Error: Type '" ++ @typeName(@TypeOf(value)) ++ "' is not a pointer!"),
+        else => util.typeError(@TypeOf(value), .pointer),
     };
     return @as(util.PtrReinterpret(@TypeOf(value), Path(info.child)), @ptrCast(value));
 }
@@ -566,7 +605,7 @@ pub fn getPath(comptime T: type) []const u8 {
     comptime {
         _ = switch (@typeInfo(T)) {
             .@"struct" => |i| i,
-            else => @compileError("Error: type '" ++ @typeName(T) ++ "' is not a struct!"),
+            else => util.typeError(T, .@"struct"),
         };
 
         if (@hasField(T, formats.identity)) {
@@ -616,7 +655,7 @@ fn isMetadata(str: []const u8) bool {
 pub fn getFieldFlags(comptime T: type) [@typeInfo(T).@"struct".field_names.len]Flags {
     const info = switch (@typeInfo(T)) {
         .@"struct" => |t| t,
-        else => @compileError("Error, type '" ++ @typeName(T) ++ "' is not a stuct!"),
+        else => util.typeError(T, .@"struct"),
     };
     var flags: [info.field_names.len]Flags = undefined;
     for (info.field_types, info.field_attrs, 0..) |U, attr, i| {

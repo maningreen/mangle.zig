@@ -23,13 +23,15 @@ pub const Array = std.ArrayList;
 
 test {
     std.testing.refAllDecls(@This());
+    std.testing.refAllDecls(flags);
+    std.testing.refAllDecls(util);
+    std.testing.refAllDecls(system);
 }
 
 fn applySystem(
     comptime Sys: type,
     comptime T: type,
-    comptime function: @EnumLiteral(),
-    comptime inlined: bool,
+    comptime function: std.meta.DeclEnum(Sys),
     value: *T,
     extraArgs: anytype,
 ) !void {
@@ -49,7 +51,6 @@ fn applySystem(
                                     Sys,
                                     U,
                                     function,
-                                    inlined,
                                     &@field(value, name),
                                     extraArgs,
                                 );
@@ -58,7 +59,7 @@ fn applySystem(
                         }
                     },
                     .leaf, .dissolve => continue,
-                    else => std.debug.panic("Error, found flag {}", .{ flag }),
+                    else => @compileError("Flag '" ++ @tagName(flag) ++ "' found present during runtime!"),
                 }
             },
             else => continue,
@@ -79,7 +80,7 @@ fn applySystem(
             );
     }
     return @call(
-        if (inlined) .always_inline else .auto,
+        .auto,
         @field(Sys, @tagName(function)),
         .{ Named, @as(*Named, @ptrCast(value)) } ++ extraArgs,
     );
@@ -194,7 +195,6 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                                     Sys,
                                     T,
                                     .process,
-                                    false,
                                     value,
                                     .{&self.info},
                                 );
@@ -391,7 +391,6 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                                     Sys,
                                     T,
                                     .receive,
-                                    false,
                                     value,
                                     .{ event, &self.info },
                                 );
