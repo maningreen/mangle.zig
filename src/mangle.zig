@@ -113,11 +113,12 @@ fn getTypeIsLegal(comptime T: type) bool {
 }
 
 fn TypeTransform(comptime T: type) type {
-    return flags.Flatten(flags.Path(T));
+    return flags.Path(flags.Flatten(T));
 }
 
 fn transform(value: anytype) TypeTransform(@TypeOf(value)) {
-    return flags.flatten(flags.path(&value).*);
+    const flattened = flags.flatten(value);
+    return flags.path(&flattened).*;
 }
 
 /// `types` should be all the types the registry will utilize at the top level,
@@ -265,9 +266,9 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                             if (T == J) break i;
                         } else @compileError("Error, type \"" ++ @typeName(@TypeOf(value)) ++ "\" is not in the Registry!");
 
-                        const flattened = flags.flatten(flags.path(&value).*);
+                        const flattened = flags.flatten(value);
 
-                        try self.data[i].append(self.info.gpa, flattened);
+                        try self.data[i].append(self.info.gpa, flags.path(&flattened).*);
                     },
                     .@"union" => try switch (value) {
                         inline else => |unwrapped| self.addValue(unwrapped),
