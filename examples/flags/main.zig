@@ -151,8 +151,6 @@ const ReplicateSystem = struct {
 };
 
 const Registry = blk: {
-    // 2_781 is the actual amount of backwards branches necessary to compile, try lowering it!
-    @setEvalBranchQuota(4000);
     break :blk mangle.Registry(
         &.{
             // Not directly usd in the registry, therefore can be omited

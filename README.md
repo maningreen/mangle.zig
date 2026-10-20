@@ -75,12 +75,12 @@ It's asserted `my_type` is a **top-level** type, if not, a compile error is thro
 
 #### RegistryInformation
 
-RegistryInformation is the substructure in registry, which is supplied to every [process function](#processing), and has several functions, two main ones.
+RegistryInformation is the substructure in registry, which is supplied to every [process function](#processing), and has several functions, three main ones.
 - `appendDeferred(self: *RegistryInformation, value: anytype)`
 - `dropDeferred(self: *RegistryInformation, value: anytype)`
 - `emit(self: RegistryInformation, value: anytype)`
 
-Usage of appendDeferred is identical to that of `addValue`; however, it doesn't add the value immediately, but waits until all [system processing](#processing) is done.
+Usage of appendDeferred is similar to that of `addValue`; however, it doesn't add the value immediately, but waits until all [system processing](#processing) is done.
 
 Usage of `dropDeferred` is slightly more complex. Given a pointer to any structure *in* the registry (top-level or not), dropping is propagated upwards until a top-level is reached.
 Dropping is appended to a queue, until [system processing](#processing) is completed, then items are removed and queues are freed.
