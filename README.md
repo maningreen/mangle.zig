@@ -202,7 +202,7 @@ pub const requirements = mangle.system.Signature.fromStruct(struct {
 
 Statuses are how a signature field should be interpreted.
 
-In order to facilitate more advanced behavior withing a signature, a signature field may have a `status`.
+In order to facilitate more advanced behavior within a signature, a signature field may have a `status`.
 By default, the status is `.required`, but may be altered.
 
 The following is a table of all statuses.

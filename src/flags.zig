@@ -627,6 +627,11 @@ pub fn getPath(comptime T: type) []const u8 {
     }
 }
 
+/// Given a type `J`, which is some `Path(T)` called on it, retrieve T.
+///
+///> **NOTE**:
+///>    - `OriginalType(Path(T)) == T`
+///>    - OriginalType could be defined as the inverse path.
 pub fn OriginalType(comptime T: type) type {
     switch (@typeInfo(T)) {
         .@"struct" => {},
@@ -639,6 +644,28 @@ pub fn OriginalType(comptime T: type) type {
             pathing.originalSubfield,
         );
     } else return T;
+}
+
+pub fn originalType(value: anytype) OriginalType(@TypeOf(value)) {
+    switch (@typeInfo(@TypeOf(value))) {
+        .@"struct" => {},
+        else => return value,
+    }
+
+    const T = @TypeOf(value);
+
+    if (@hasField(T, formats.identity)) {
+        const Original = @field(
+            @FieldType(T, formats.identity),
+            pathing.originalSubfield,
+        );
+
+        var ret: Original = undefined;
+        inline for (@typeInfo(Original).@"struct".field_names) |name| {
+            @field(ret, name) = @field(value, name);
+        }
+        return ret;
+    } else return value;
 }
 
 pub fn isPathed(comptime T: type) bool {

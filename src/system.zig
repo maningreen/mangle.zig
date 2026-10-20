@@ -196,20 +196,35 @@ pub const Signature = struct {
                 switch (flags.fieldFlag(Original)) {
                     .dissolve => {
                         if (Original == Flattened) {
+                            const Aliased = flags.AliasType(U);
                             info.fieldNames[i] = field.name;
-                            info.fieldTypes[i] = flags.AliasType(U);
-                            info.fieldAttributes[i].default_value_ptr = null;
+                            info.fieldTypes[i] = Aliased;
+                            const default = if (info.fieldAttributes[i].defaultValue(U)) |default|
+                                &(struct {
+                                    const value: Aliased = flags.aliasUnwrap(default);
+                                }).value
+                            else
+                                null;
+                            info.fieldAttributes[i].default_value_ptr = default;
                             continue :field;
                         }
                     },
-                    .leaf, .owned, .implicit => {
+                    .implicit, .leaf, .owned => {
                         if (Original == Flattened) {
                             info.fieldNames[i] = field.name;
-                            info.fieldTypes[i] = field.type;
+                            info.fieldTypes[i] = Original;
+                            info.fieldAttributes[i].default_value_ptr =
+                                if (info.fieldAttributes[i].defaultValue(U)) |default|
+                                    &(struct {
+                                        const value: Original = flags.originalType(default);
+                                    }).value
+                                else
+                                    null;
                             continue :field;
                         }
                     },
-                    else => unreachable,
+                    // composed should be out of runtime
+                    .composed => unreachable,
                 }
             }
         }
