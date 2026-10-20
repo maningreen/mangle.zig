@@ -232,6 +232,79 @@ pub const Signature = struct {
     }
 };
 
+test Signature {
+    const NamedCase = struct {
+        signature: Signature,
+        input: type,
+        expected: type,
+    };
+
+    const QualifiesCase = struct {
+        signature: Signature,
+        input: type,
+        expected: bool,
+    };
+
+    const Empty = struct {};
+
+    const namedTests: []const NamedCase = &.{
+        NamedCase{
+            .signature = comptime Signature.fromStruct(Empty),
+            .input = Empty,
+            .expected = Empty,
+        },
+        NamedCase{
+            .signature = comptime Signature.fromStruct(Empty),
+            .input = struct { u32 },
+            .expected = struct { u32 },
+        },
+        NamedCase{
+            .signature = comptime Signature.fromStruct(struct { item: u32 }),
+            .input = struct { u32 },
+            .expected = struct { item: u32 },
+        },
+        NamedCase{
+            .signature = comptime Signature.fromStruct(struct {
+                item: u32,
+            }),
+            .input = struct { u32 },
+            .expected = struct { item: u32 },
+        },
+    };
+
+    const qualifyTests: []const QualifiesCase = &.{
+        QualifiesCase{
+            .signature = comptime Signature.fromStruct(Empty),
+            .input = Empty,
+            .expected = true,
+        },
+        QualifiesCase{
+            .signature = comptime Signature.fromStruct(struct { u32, usize }),
+            .input = Empty,
+            .expected = false,
+        },
+        QualifiesCase{
+            .signature = comptime Signature.fromStruct(struct { u32, usize }),
+            .input = struct { u32 },
+            .expected = false,
+        },
+        QualifiesCase{
+            .signature = comptime Signature.fromStruct(struct { u32, usize }),
+            .input = struct { u32, usize },
+            .expected = true,
+        },
+    };
+
+    inline for (namedTests) |case| {
+        const Named = case.signature.NamedType(case.signature.NamedType(case.input));
+        try std.testing.expect(util.fieldsEql(case.expected, Named) == null);
+    }
+
+    inline for (qualifyTests) |case| {
+        try std.testing.expectEqual(case.expected, case.signature.qualifies(case.input));
+    }
+}
+
 /// Checks whether the inputed system type qualifies according to `fields`
 pub fn qualifies(comptime System: type) bool {
     comptime {
