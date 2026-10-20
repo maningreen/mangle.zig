@@ -169,12 +169,14 @@ pub const Signature = struct {
 
     const voidValue: void = {};
 
-    /// Returns the inputed structure with names according to the fields
+    ///Returns the inputted structure with names according to the fields
     ///
     ///> **NOTE**:
     ///> - `self.NamedType(T) != T` when `self.qualifies(T)` and `self.fields.len > 0`
     ///> - Asserts `self.qualifies(T)`
-    ///> - Returns a memory equivilent type to T
+    ///> - Returns a memory equivalent type to T[^1]
+    ///
+    ///[^1]: technically not guaranteed.
     pub fn NamedType(comptime self: Signature, comptime T: type) type {
         var info = util.deStruct(T);
         if (!self.qualifies(T)) {
