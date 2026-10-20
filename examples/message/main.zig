@@ -18,7 +18,7 @@ const Message = struct {
     pub fn init(gpa: std.mem.Allocator, str: []const u8, key: u8) !Message {
         const copy = try gpa.alloc(u8, str.len);
         @memcpy(copy, str);
-        return .{ .key = key, .str = copy };
+        return .{ .key = key, .string = copy };
     }
 };
 
@@ -58,7 +58,7 @@ pub fn main(init: std.process.Init) !void {
 
     const message = "Enter 'e' to close\n";
 
-    try reg.addValue(Message.init(init.gpa, message, 'e'));
+    try reg.addValue(try Message.init(init.gpa, message, 'e'));
 
     // we use 0 for delta because we don't use it otherwise, process is a oneshot.
     try reg.process(0);
