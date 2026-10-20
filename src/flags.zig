@@ -562,42 +562,51 @@ fn PathData(comptime prefix: []const u8, comptime Original: type) type {
         const __internal_registry_type_path__ = prefix;
         const __InternalRegistryOriginalType__ = Original;
         const __internal_registry_leaf_flag__ = {};
+
+        const static: @This() = .{};
     };
 }
 
 fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
-    comptime {
-        switch (@typeInfo(T)) {
-            .@"struct" => {},
-            else => return T,
-        }
-        if (@hasField(T, formats.identity)) {
-            @compileError(std.fmt.comptimePrint(
-                "Type '{}' already has a path: '{any}'. Please report this as an issue.",
-                .{
-                    OriginalType(T),
-                    @typeInfo(@FieldType(T, formats.identity)).@"struct".decls,
-                },
-            ));
-        }
-
-        var deconstructed = util.deStruct(T);
-        for (deconstructed.fieldTypes, deconstructed.fieldNames, getFieldFlags(T), 0..) |U, name, flag, i| {
-            switch (flag) {
-                .owned => {
-                    const newPrefix = prefix ++ .{pathing.path_delimiter} ++ name;
-                    deconstructed.fieldTypes[i] = PathInternal(U, newPrefix);
-                },
-                else => continue,
-            }
-        }
-        var new = deconstructed.expand(1);
-        const i = deconstructed.fieldNames.len;
-        new.fieldNames[i] = formats.identity;
-        new.fieldTypes[i] = PathData(prefix, T);
-        new.fieldAttributes[i] = .{};
-        return new.Construct();
+    switch (@typeInfo(T)) {
+        .@"struct" => {},
+        else => return T,
     }
+    if (@hasField(T, formats.identity)) {
+        @compileError(std.fmt.comptimePrint(
+            "Type '{}' already has a path: '{any}'. Please report this as an issue.",
+            .{
+                OriginalType(T),
+                @typeInfo(@FieldType(T, formats.identity)).@"struct".decls,
+            },
+        ));
+    }
+
+    var deconstructed = util.deStruct(T);
+    for (deconstructed.fieldTypes, deconstructed.fieldNames, getFieldFlags(T), 0..) |U, name, flag, i| {
+        switch (flag) {
+            .owned => {
+                const newPrefix = prefix ++ .{pathing.path_delimiter} ++ name;
+                const Pathed = PathInternal(U, newPrefix);
+                deconstructed.fieldTypes[i] = Pathed;
+                if (deconstructed.fieldAttributes[i].defaultValue(U)) |default| {
+                    deconstructed.fieldAttributes[i].default_value_ptr = &(struct {
+                        const static: Pathed = (@as(*const Pathed, @ptrCast(&default))).*;
+                    }).static;
+                }
+            },
+            else => continue,
+        }
+    }
+    var new = deconstructed.expand(1);
+    const i = deconstructed.fieldNames.len;
+    new.fieldNames[i] = formats.identity;
+    const Data = PathData(prefix, T);
+    new.fieldTypes[i] = Data;
+    new.fieldAttributes[i] = .{
+        .default_value_ptr = &Data.static,
+    };
+    return new.Construct();
 }
 
 /// Given a pointer value, retypes it into a pathed version.
