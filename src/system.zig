@@ -195,9 +195,6 @@ pub const Signature = struct {
                 const Original = if (flags.isPathed(U)) flags.OriginalType(U) else U;
                 switch (flags.fieldFlag(Original)) {
                     .dissolve => {
-                        if (Original == Flattened) {
-                            info.fieldNames[i] = field.name;
-                        }
                         const Aliased = flags.AliasType(U);
                         info.fieldTypes[i] = Aliased;
                         const default = if (info.fieldAttributes[i].defaultValue(U)) |default|
@@ -207,11 +204,12 @@ pub const Signature = struct {
                         else
                             null;
                         info.fieldAttributes[i].default_value_ptr = default;
-                        continue :field;
+                        if (Original == Flattened) {
+                            info.fieldNames[i] = field.name;
+                            continue :field;
+                        }
                     },
                     .implicit, .leaf, .owned => {
-                        if (Original == Flattened)
-                            info.fieldNames[i] = field.name;
                         info.fieldTypes[i] = Original;
                         info.fieldAttributes[i].default_value_ptr =
                             if (info.fieldAttributes[i].defaultValue(U)) |default|
@@ -220,7 +218,10 @@ pub const Signature = struct {
                                 }).value
                             else
                                 null;
-                        continue :field;
+                        if (Original == Flattened) {
+                            info.fieldNames[i] = field.name;
+                            continue :field;
+                        }
                     },
                     // composed should be out of runtime
                     .composed => unreachable,
