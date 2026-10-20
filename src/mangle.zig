@@ -77,6 +77,7 @@ fn applySystem(
                 \\' and substructures." You may also want to include the definition for the system '
             ++ @typeName(Sys) ++
                 \\'
+                \\ this is *probably* not your fault, as the function used for this isn't perfect.
             );
     }
     return @call(
@@ -84,6 +85,31 @@ fn applySystem(
         @field(Sys, @tagName(function)),
         .{ Named, @as(*Named, @ptrCast(value)) } ++ extraArgs,
     );
+}
+
+fn getTypeIsLegal(comptime T: type) bool {
+    const info = switch (@typeInfo(T)) {
+        .@"struct" => |i| i,
+        else => util.typeError(T, .@"struct"),
+    };
+
+    for (info.field_names, info.field_types, info.field_attrs, flags.getFieldFlags(T)) |name, U, attr, flag| {
+        switch (@typeInfo(U)) {
+            .@"struct" => {
+                if (attr.@"comptime") {
+                    switch (flag) {
+                        // illegal behavior
+                        .owned, .composed => |tag| {
+                            @compileError("Error, type '" ++ @typeName(T) ++ "' has a field ('" ++ name ++ "') which is comptime and marked as " ++ @tagName(tag) ++ ", illegal behavior");
+                        },
+                        else => {},
+                    }
+                }
+                if(!getTypeIsLegal(U)) return false;
+            },
+            else => continue,
+        }
+    } else return true;
 }
 
 fn TypeTransform(comptime T: type) type {
@@ -97,14 +123,13 @@ fn transform(value: anytype) TypeTransform(@TypeOf(value)) {
 /// `types` should be all the types the registry will utilize at the top level,
 /// `types` *will not* be infered by systems.
 pub fn Registry(comptime types: []const type, comptime requestedSystems: []const type, comptime ExtraInfo: ?type) type {
-    // we do a lot of comptime recursion (which is an issue to optimize)
-    // so we just set it to an 'arbitrary' big number
     comptime {
         // create structure of arrays
         var valueTypes: [types.len]type = undefined;
         var retyped: [types.len]type = undefined;
         var dropItem: [types.len]type = undefined;
         for (types, 0..) |T, i| {
+            _ = getTypeIsLegal(T);
             if (@typeInfo(T) != .@"struct")
                 @compileError("Error: type '" ++ @typeName(T) ++ "' is not a structure!");
             retyped[i] = TypeTransform(T);
@@ -409,7 +434,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
 
             /// Prints the systems top-level types qualify for.
             ///
-            /// Runs automatically on `@import("builtin").mode == .Debug`, doesn't otherwise
+            /// Runs automatically on `@import("builtin").mode == .debug`, doesn't otherwise
             pub fn logQualify() void {
                 inline for (types) |T| {
                     std.debug.print("Type '{}' qualifies for system(s): ", .{T});

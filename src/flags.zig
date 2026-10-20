@@ -254,6 +254,9 @@ pub fn reduce(value: anytype, comptime flag: Flags) Reduce(@TypeOf(value), flag)
         else => util.typeError(T, .@"struct"),
     };
 
+    // TODO: make this account for recursion
+    @setEvalBranchQuota(2000 * info.field_names.len);
+
     var ret: Reduce(T, flag) = undefined;
     const Return = @TypeOf(ret);
     if (T == Return)
