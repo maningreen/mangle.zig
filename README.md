@@ -370,7 +370,7 @@ A system with `U` **will** match with `T.subfield` (like ownership)
 
 > [!Note]
 > Creating an instance of `T` cannot explicitly initialize `subfield` as `U`, because `Leaf(U) != U`
-> See [here]() for how to.
+> See [here](#flagged-instantiation) for how to.
 
 ### Alias(T)
 
