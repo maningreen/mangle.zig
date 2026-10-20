@@ -196,32 +196,31 @@ pub const Signature = struct {
                 switch (flags.fieldFlag(Original)) {
                     .dissolve => {
                         if (Original == Flattened) {
-                            const Aliased = flags.AliasType(U);
                             info.fieldNames[i] = field.name;
-                            info.fieldTypes[i] = Aliased;
-                            const default = if (info.fieldAttributes[i].defaultValue(U)) |default|
+                        }
+                        const Aliased = flags.AliasType(U);
+                        info.fieldTypes[i] = Aliased;
+                        const default = if (info.fieldAttributes[i].defaultValue(U)) |default|
+                            &(struct {
+                                const value: Aliased = flags.aliasUnwrap(default);
+                            }).value
+                        else
+                            null;
+                        info.fieldAttributes[i].default_value_ptr = default;
+                        continue :field;
+                    },
+                    .implicit, .leaf, .owned => {
+                        if (Original == Flattened)
+                            info.fieldNames[i] = field.name;
+                        info.fieldTypes[i] = Original;
+                        info.fieldAttributes[i].default_value_ptr =
+                            if (info.fieldAttributes[i].defaultValue(U)) |default|
                                 &(struct {
-                                    const value: Aliased = flags.aliasUnwrap(default);
+                                    const value: Original = flags.originalType(default);
                                 }).value
                             else
                                 null;
-                            info.fieldAttributes[i].default_value_ptr = default;
-                            continue :field;
-                        }
-                    },
-                    .implicit, .leaf, .owned => {
-                        if (Original == Flattened) {
-                            info.fieldNames[i] = field.name;
-                            info.fieldTypes[i] = Original;
-                            info.fieldAttributes[i].default_value_ptr =
-                                if (info.fieldAttributes[i].defaultValue(U)) |default|
-                                    &(struct {
-                                        const value: Original = flags.originalType(default);
-                                    }).value
-                                else
-                                    null;
-                            continue :field;
-                        }
+                        continue :field;
                     },
                     // composed should be out of runtime
                     .composed => unreachable,

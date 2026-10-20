@@ -591,7 +591,7 @@ fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
                 deconstructed.fieldTypes[i] = Pathed;
                 if (deconstructed.fieldAttributes[i].defaultValue(U)) |default| {
                     deconstructed.fieldAttributes[i].default_value_ptr = &(struct {
-                        const static: Pathed = (@as(*const Pathed, @ptrCast(&default))).*;
+                        const static: Pathed = pathInternal(default, newPrefix);
                     }).static;
                 }
             },
@@ -619,6 +619,18 @@ pub fn path(value: anytype) util.PtrReinterpret(@TypeOf(value), Path(@typeInfo(@
         else => util.typeError(@TypeOf(value), .pointer),
     };
     return @as(util.PtrReinterpret(@TypeOf(value), Path(info.child)), @ptrCast(value));
+}
+
+fn pathInternal(comptime value: anytype, comptime prefix: []const u8) PathInternal(@TypeOf(value), prefix) {
+    const T = @TypeOf(value);
+    const Pathed = PathInternal(T, prefix);
+
+    var ret: Pathed = undefined;
+    @field(ret, formats.identity) = .{};
+    inline for (@typeInfo(T).@"struct".field_names) |field| {
+        @field(ret, field) = @field(value, field);
+    }
+    return ret;
 }
 
 /// Returns the type path relative to a registry top level
