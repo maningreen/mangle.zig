@@ -241,3 +241,28 @@ pub fn layoutEql(comptime T: type, comptime U: type) bool {
 pub fn typeError(comptime T: type, comptime target: std.lang.TypeId) noreturn {
     @compileError("Error, type '" ++ @typeName(T) ++ "' is not a '" ++ @tagName(target) ++ "'");
 }
+
+/// internal testing function
+pub fn fieldsEql(comptime T: type, comptime U: type) ?enum { name, type } {
+    const tinfo = @typeInfo(T).@"struct";
+    const uinfo = @typeInfo(U).@"struct";
+    const value = comptime for (tinfo.field_names, uinfo.field_names, tinfo.field_types, uinfo.field_types) |nameT, nameU, TT, TU| {
+        if (!std.mem.eql(u8, nameT, nameU)) break .{ nameT, nameU };
+        if (@typeInfo(TT) == .@"struct") {
+            if (fieldsEql(TT, TU)) |_| break .{ TT, TU };
+        } else if (TT != TU) break .{ TT, TU };
+    } else null;
+    if (value == null) return value;
+    switch (@TypeOf(value)) {
+        struct { []const u8, []const u8 } => {
+            std.testing.failPrint("{s}, {s}", value);
+            return .name;
+        },
+        else => {
+            std.testing.failPrint("{}, {}", value);
+            return .type;
+        },
+    }
+    return null;
+}
+

@@ -733,30 +733,6 @@ pub fn getFieldFlags(comptime T: type) [@typeInfo(T).@"struct".field_names.len]F
     return flags;
 }
 
-/// internal testing function
-fn fieldsEql(comptime T: type, comptime U: type) ?enum { name, type } {
-    const tinfo = @typeInfo(T).@"struct";
-    const uinfo = @typeInfo(U).@"struct";
-    const value = comptime for (tinfo.field_names, uinfo.field_names, tinfo.field_types, uinfo.field_types) |nameT, nameU, TT, TU| {
-        if (!std.mem.eql(u8, nameT, nameU)) break .{ nameT, nameU };
-        if (@typeInfo(TT) == .@"struct") {
-            if (fieldsEql(TT, TU)) |_| break .{ TT, TU };
-        } else if (TT != TU) break .{ TT, TU };
-    } else null;
-    if (value == null) return value;
-    switch (@TypeOf(value)) {
-        struct { []const u8, []const u8 } => {
-            std.testing.failPrint("{s}, {s}", value);
-            return .name;
-        },
-        else => {
-            std.testing.failPrint("{}, {}", value);
-            return .type;
-        },
-    }
-    return null;
-}
-
 test getFieldFlags {
     const T = struct { index: usize, comptime TypeAlias: Alias(type, "value") = .{ .value = usize }, substructure: struct {
         value: usize,
@@ -842,7 +818,7 @@ test Path {
         __internal_registry_ownership_path__: PathData(".", T),
     };
 
-    try std.testing.expectEqual(null, fieldsEql(Pathed, Expected));
+    try std.testing.expectEqual(null, util.fieldsEql(Pathed, Expected));
 }
 
 test aliasName {
@@ -902,6 +878,6 @@ test ApplyMetadata {
 
     inline for (cases) |case| {
         const Outcome = ApplyMetadata(case.initial, case.metadata);
-        try std.testing.expectEqual(null, fieldsEql(case.expected, Outcome));
+        try std.testing.expectEqual(null, util.fieldsEql(case.expected, Outcome));
     }
 }

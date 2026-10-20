@@ -153,20 +153,18 @@ pub const Signature = struct {
     /// Given a structure type `T` generates a signature from it.
     /// Status for all fields is `required`
     pub fn fromStruct(comptime T: type) Signature {
-        comptime {
-            const info = switch (@typeInfo(T)) {
-                .@"struct" => |i| i,
-                else => @compileError("Error: Type '" ++ @typeName(flags.OriginalType(T)) ++ "' is not a struct!"),
-            };
-            var collectFields: [info.field_names.len]Item = undefined;
-            for (info.field_names, info.field_types, 0..) |fieldName, Field, i| {
-                collectFields[i] = .{ .name = fieldName, .type = Field };
-            }
-            const U = struct {
-                const fields: [info.field_names.len]Item = collectFields;
-            };
-            return .{ .fields = &U.fields };
+        const info = switch (@typeInfo(T)) {
+            .@"struct" => |i| i,
+            else => @compileError("Error: Type '" ++ @typeName(flags.OriginalType(T)) ++ "' is not a struct!"),
+        };
+        comptime var collectFields: [info.field_names.len]Item = undefined;
+        for (info.field_names, info.field_types, 0..) |fieldName, Field, i| {
+            collectFields[i] = .{ .name = fieldName, .type = Field };
         }
+        const U = struct {
+            const fields: [info.field_names.len]Item = collectFields;
+        };
+        return .{ .fields = &U.fields };
     }
 
     const voidValue: void = {};
@@ -183,51 +181,51 @@ pub const Signature = struct {
             for (info.fieldNames, info.fieldTypes) |value, U| {
                 @compileLog(value, U);
             }
-            @compileLog(info.fieldTypes.len);
             @compileError("Error, type '" ++ @typeName(flags.OriginalType(T)) ++ "' does not qualify!");
         }
-        field: for (self.fields) |field| {
+
+        for (self.fields) |field| {
             const Flattened = switch (@typeInfo(field.type)) {
                 .@"struct" => flags.Flatten(field.type),
                 else => field.type,
             };
             for (info.fieldTypes, 0..) |U, i| {
                 const Original = if (flags.isPathed(U)) flags.OriginalType(U) else U;
-                switch (flags.fieldFlag(Original)) {
-                    .dissolve => {
-                        const Aliased = flags.AliasType(U);
-                        info.fieldTypes[i] = Aliased;
-                        const default = if (info.fieldAttributes[i].defaultValue(U)) |default|
-                            &(struct {
-                                const value: Aliased = flags.aliasUnwrap(default);
-                            }).value
-                        else
-                            null;
-                        info.fieldAttributes[i].default_value_ptr = default;
-                        if (Original == Flattened) {
-                            info.fieldNames[i] = field.name;
-                            continue :field;
-                        }
-                    },
-                    .implicit, .leaf, .owned => {
-                        info.fieldTypes[i] = Original;
-                        info.fieldAttributes[i].default_value_ptr =
-                            if (info.fieldAttributes[i].defaultValue(U)) |default|
-                                &(struct {
-                                    const value: Original = flags.originalType(default);
-                                }).value
-                            else
-                                null;
-                        if (Original == Flattened) {
-                            info.fieldNames[i] = field.name;
-                            continue :field;
-                        }
-                    },
-                    // composed should be out of runtime
-                    .composed => unreachable,
+                const fits = Original == Flattened;
+                if (fits) {
+                    info.fieldNames[i] = field.name;
                 }
             }
         }
+
+        for (info.fieldTypes, flags.getFieldFlags(T), 0..) |Field, flag, i| {
+            const Original = if (flags.isPathed(Field)) flags.OriginalType(Field) else Field;
+            const Type, const default = switch (flag) {
+                .dissolve => .{
+                    flags.AliasType(Original),
+                    if (info.fieldAttributes[i].defaultValue(Field)) |default|
+                        &(struct {
+                            const value = flags.aliasUnwrap(default);
+                        }).value
+                    else
+                        null,
+                },
+                .implicit, .leaf, .owned => .{
+                    Original,
+                    if (info.fieldAttributes[i].defaultValue(Field)) |default|
+                        &(struct {
+                            const value: Original = flags.originalType(default);
+                        }).value
+                    else
+                        null,
+                },
+                // composition shouldn't be here
+                .composed => unreachable,
+            };
+            info.fieldAttributes[i].default_value_ptr = default;
+            info.fieldTypes[i] = Type;
+        }
+
         return info.Construct();
     }
 };
