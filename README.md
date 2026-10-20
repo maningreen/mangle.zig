@@ -73,6 +73,11 @@ try registry.addValue(my_type);
 ```
 It's asserted `my_type` is a **top-level** type, if not, a compile error is thrown.
 
+Other notes on addValue:
+- If `value` is `?T` and `T` is a top-level type, if `value != null` on call, `T` will be unwrapped and added to the registry
+- If `value` is a union, and all tags are top-level types, then it will be automatically unwrapped and added to the registry
+    - if not all tags are, a compile error's thrown.
+
 #### RegistryInformation
 
 RegistryInformation is the substructure in registry, which is supplied to every [process function](#processing), and has several functions, three main ones.
@@ -298,7 +303,7 @@ There's a **flag** for each of these cases, respectively:
     - [leaf](#leaft)
     - [dissolve](#aliast)
 
-Note, if unspecified, it's [implicit](#implicit), which defaults to ownership *most of the time*.[^comptime-fields]
+Note, if unspecified, it's implicit, which defaults to ownership *most of the time*.[^comptime-fields]
 
 ### Own(T)
 
@@ -474,15 +479,13 @@ The following is what's permitted on comptime fields.
 
 Currently[^1] unions are classified as a `leaf`, and therefore aren't recursed into, or even considered to be able to.
 The reason is because we can't 100% sure assert that a union has particular fields at comptime.
-If you want to remedy this, the following is suggested.
+If you want to remedy this create a system which will unwrap the union and provide behavior.
 
-```zig
-```
-
-### Footnotes
-
-[^comptime-fields] Comptime fields default to `leaf` behavior. See more [here](#comptime-fields)
+[^1]: this most likely will not change
 
 ## Docs
 
 Docs are hosted online [here](https://maningreen.github.io/mangle.zig/)
+
+<!-- Footnotes -->
+[^comptime-fields]: Comptime fields default to `leaf` behavior. See more [here](#comptime-fields)
