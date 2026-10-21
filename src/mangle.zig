@@ -328,7 +328,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                         } else @compileError("Error: type '" ++ @typeName(T) ++ "' is not anywhere in the registry");
                     }
                 };
-                try self.dropQueue[i].append(self.gpa, @ptrCast(value));
+                try self.dropQueue[i].append(self.info.gpa, @ptrCast(value));
             }
 
             /// information provided to every system as the final argument.
