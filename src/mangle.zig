@@ -105,7 +105,7 @@ fn getTypeIsLegal(comptime T: type) bool {
                         else => {},
                     }
                 }
-                if(!getTypeIsLegal(U)) return false;
+                if (!getTypeIsLegal(U)) return false;
             },
             else => continue,
         }
@@ -369,26 +369,32 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             /// Loops through the dropQueue and removes the items in the registry with a double pass
             /// invalidates pointers
             fn drop(self: *RegistryT) void {
-                const dropInfo = @typeInfo(DropType).@"struct";
-                inline for (dropInfo.field_names) |name| {
-                    for (@field(self.dropQueue, name).items) |i|
-                        self.itemDeinit(i);
-                    for (@field(self.dropQueue, name).items) |i| {
-                        const originPtr = @field(self.data, name).items;
-                        const index: i65 = @as(i65, @intFromPtr(i)) - @as(i65, @intFromPtr(originPtr.ptr));
-                        if (comptime (@import("builtin").mode == .debug))
-                            if (index < 0 or index > originPtr.len)
-                                std.debug.panic(
-                                    "Error: {} pointer has index of {d} in an array of length {d}! Please check ownership!",
-                                    .{
-                                        @TypeOf(i),
-                                        index,
-                                        originPtr.len,
-                                    },
-                                );
-                        _ = @field(self.data, name).swapRemove(@as(usize, @intCast(index)));
+                inline for (&self.dropQueue, &self.data) |*queue, *array| {
+                    for (queue.items) |ptr| {
+                        self.itemDeinit(ptr);
                     }
-                    @field(self.dropQueue, name).clearAndFree(self.info.gpa);
+
+                    // this is a little hacky, but here's what we're doing.
+                    // we take the drop queue, since @sizeOf(*T) == usize, we'll cast []T -> []usize.
+                    // then from there, we'll sort and use `.orderedRemoveMany`
+                    // we can sort unstable. that helps a little.
+                    //
+                    // TODO: make this an untagged union, making it *actually* valid instead of... this
+
+                    const initial: usize = @intFromPtr(array.items.ptr);
+                    const casted: []usize = @ptrCast(queue.items);
+                    for (queue.items, casted) |item, *index| {
+                        index.* = @intFromPtr(item) - initial;
+                    }
+
+                    std.mem.sortUnstable(usize, casted, {}, (struct {
+                        fn lessThan(_: void, a: usize, b: usize) bool {
+                            return a < b;
+                        }
+                    }).lessThan);
+
+                    array.orderedRemoveMany(casted);
+                    queue.clearAndFree(self.info.gpa);
                 }
             }
 
