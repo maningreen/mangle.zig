@@ -24,7 +24,7 @@ const ReplicateData = struct {
 };
 
 // Behavior flags
-const Wrap = mangle.Alias(void, "wrap");
+const Wrap = struct {}; // for void flags, using `struct {}` works as well, and can reduce comptime load.
 const Bounce = mangle.Alias(void, "bounce");
 
 const Particle = struct {
@@ -35,7 +35,7 @@ const Particle = struct {
 
 const WrappingParticle = struct {
     particle: mangle.Compose(Particle),
-    wrap: Wrap = .{ .wrap = {} },
+    wrap: Wrap = .{},
 };
 
 const ReplicatingWrap = struct {

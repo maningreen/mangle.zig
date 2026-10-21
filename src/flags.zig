@@ -562,42 +562,51 @@ fn PathData(comptime prefix: []const u8, comptime Original: type) type {
         const __internal_registry_type_path__ = prefix;
         const __InternalRegistryOriginalType__ = Original;
         const __internal_registry_leaf_flag__ = {};
+
+        const static: @This() = .{};
     };
 }
 
 fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
-    comptime {
-        switch (@typeInfo(T)) {
-            .@"struct" => {},
-            else => return T,
-        }
-        if (@hasField(T, formats.identity)) {
-            @compileError(std.fmt.comptimePrint(
-                "Type '{}' already has a path: '{any}'. Please report this as an issue.",
-                .{
-                    OriginalType(T),
-                    @typeInfo(@FieldType(T, formats.identity)).@"struct".decls,
-                },
-            ));
-        }
-
-        var deconstructed = util.deStruct(T);
-        for (deconstructed.fieldTypes, deconstructed.fieldNames, getFieldFlags(T), 0..) |U, name, flag, i| {
-            switch (flag) {
-                .owned => {
-                    const newPrefix = prefix ++ .{pathing.path_delimiter} ++ name;
-                    deconstructed.fieldTypes[i] = PathInternal(U, newPrefix);
-                },
-                else => continue,
-            }
-        }
-        var new = deconstructed.expand(1);
-        const i = deconstructed.fieldNames.len;
-        new.fieldNames[i] = formats.identity;
-        new.fieldTypes[i] = PathData(prefix, T);
-        new.fieldAttributes[i] = .{};
-        return new.Construct();
+    switch (@typeInfo(T)) {
+        .@"struct" => {},
+        else => return T,
     }
+    if (@hasField(T, formats.identity)) {
+        @compileError(std.fmt.comptimePrint(
+            "Type '{}' already has a path: '{any}'. Please report this as an issue.",
+            .{
+                OriginalType(T),
+                @typeInfo(@FieldType(T, formats.identity)).@"struct".decls,
+            },
+        ));
+    }
+
+    var deconstructed = util.deStruct(T);
+    for (deconstructed.fieldTypes, deconstructed.fieldNames, getFieldFlags(T), 0..) |U, name, flag, i| {
+        switch (flag) {
+            .owned => {
+                const newPrefix = prefix ++ .{pathing.path_delimiter} ++ name;
+                const Pathed = PathInternal(U, newPrefix);
+                deconstructed.fieldTypes[i] = Pathed;
+                if (deconstructed.fieldAttributes[i].defaultValue(U)) |default| {
+                    deconstructed.fieldAttributes[i].default_value_ptr = &(struct {
+                        const static: Pathed = pathInternal(default, newPrefix);
+                    }).static;
+                }
+            },
+            else => continue,
+        }
+    }
+    var new = deconstructed.expand(1);
+    const i = deconstructed.fieldNames.len;
+    new.fieldNames[i] = formats.identity;
+    const Data = PathData(prefix, T);
+    new.fieldTypes[i] = Data;
+    new.fieldAttributes[i] = .{
+        .default_value_ptr = &Data.static,
+    };
+    return new.Construct();
 }
 
 /// Given a pointer value, retypes it into a pathed version.
@@ -610,6 +619,18 @@ pub fn path(value: anytype) util.PtrReinterpret(@TypeOf(value), Path(@typeInfo(@
         else => util.typeError(@TypeOf(value), .pointer),
     };
     return @as(util.PtrReinterpret(@TypeOf(value), Path(info.child)), @ptrCast(value));
+}
+
+fn pathInternal(comptime value: anytype, comptime prefix: []const u8) PathInternal(@TypeOf(value), prefix) {
+    const T = @TypeOf(value);
+    const Pathed = PathInternal(T, prefix);
+
+    var ret: Pathed = undefined;
+    @field(ret, formats.identity) = .{};
+    inline for (@typeInfo(T).@"struct".field_names) |field| {
+        @field(ret, field) = @field(value, field);
+    }
+    return ret;
 }
 
 /// Returns the type path relative to a registry top level
@@ -712,30 +733,6 @@ pub fn getFieldFlags(comptime T: type) [@typeInfo(T).@"struct".field_names.len]F
     return flags;
 }
 
-/// internal testing function
-fn fieldsEql(comptime T: type, comptime U: type) ?enum { name, type } {
-    const tinfo = @typeInfo(T).@"struct";
-    const uinfo = @typeInfo(U).@"struct";
-    const value = comptime for (tinfo.field_names, uinfo.field_names, tinfo.field_types, uinfo.field_types) |nameT, nameU, TT, TU| {
-        if (!std.mem.eql(u8, nameT, nameU)) break .{ nameT, nameU };
-        if (@typeInfo(TT) == .@"struct") {
-            if (fieldsEql(TT, TU)) |_| break .{ TT, TU };
-        } else if (TT != TU) break .{ TT, TU };
-    } else null;
-    if (value == null) return value;
-    switch (@TypeOf(value)) {
-        struct { []const u8, []const u8 } => {
-            std.testing.failPrint("{s}, {s}", value);
-            return .name;
-        },
-        else => {
-            std.testing.failPrint("{}, {}", value);
-            return .type;
-        },
-    }
-    return null;
-}
-
 test getFieldFlags {
     const T = struct { index: usize, comptime TypeAlias: Alias(type, "value") = .{ .value = usize }, substructure: struct {
         value: usize,
@@ -821,7 +818,7 @@ test Path {
         __internal_registry_ownership_path__: PathData(".", T),
     };
 
-    try std.testing.expectEqual(null, fieldsEql(Pathed, Expected));
+    try std.testing.expectEqual(null, util.fieldsEql(Pathed, Expected));
 }
 
 test aliasName {
@@ -881,6 +878,6 @@ test ApplyMetadata {
 
     inline for (cases) |case| {
         const Outcome = ApplyMetadata(case.initial, case.metadata);
-        try std.testing.expectEqual(null, fieldsEql(case.expected, Outcome));
+        try std.testing.expectEqual(null, util.fieldsEql(case.expected, Outcome));
     }
 }

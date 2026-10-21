@@ -153,84 +153,157 @@ pub const Signature = struct {
     /// Given a structure type `T` generates a signature from it.
     /// Status for all fields is `required`
     pub fn fromStruct(comptime T: type) Signature {
-        comptime {
-            const info = switch (@typeInfo(T)) {
-                .@"struct" => |i| i,
-                else => @compileError("Error: Type '" ++ @typeName(flags.OriginalType(T)) ++ "' is not a struct!"),
-            };
-            var collectFields: [info.field_names.len]Item = undefined;
-            for (info.field_names, info.field_types, 0..) |fieldName, Field, i| {
-                collectFields[i] = .{ .name = fieldName, .type = Field };
-            }
-            const U = struct {
-                const fields: [info.field_names.len]Item = collectFields;
-            };
-            return .{ .fields = &U.fields };
+        const info = switch (@typeInfo(T)) {
+            .@"struct" => |i| i,
+            else => @compileError("Error: Type '" ++ @typeName(flags.OriginalType(T)) ++ "' is not a struct!"),
+        };
+        comptime var collectFields: [info.field_names.len]Item = undefined;
+        for (info.field_names, info.field_types, 0..) |fieldName, Field, i| {
+            collectFields[i] = .{ .name = fieldName, .type = Field };
         }
+        const U = struct {
+            const fields: [info.field_names.len]Item = collectFields;
+        };
+        return .{ .fields = &U.fields };
     }
 
     const voidValue: void = {};
 
-    /// Returns the inputed structure with names according to the fields
+    ///Returns the inputted structure with names according to the fields
     ///
     ///> **NOTE**:
     ///> - `self.NamedType(T) != T` when `self.qualifies(T)` and `self.fields.len > 0`
     ///> - Asserts `self.qualifies(T)`
-    ///> - Returns a memory equivilent type to T
+    ///> - Returns a memory equivalent type to T[^1]
+    ///
+    ///[^1]: technically not guaranteed.
     pub fn NamedType(comptime self: Signature, comptime T: type) type {
         var info = util.deStruct(T);
         if (!self.qualifies(T)) {
             for (info.fieldNames, info.fieldTypes) |value, U| {
                 @compileLog(value, U);
             }
-            @compileLog(info.fieldTypes.len);
             @compileError("Error, type '" ++ @typeName(flags.OriginalType(T)) ++ "' does not qualify!");
         }
-        field: for (self.fields) |field| {
+
+        for (self.fields) |field| {
             const Flattened = switch (@typeInfo(field.type)) {
                 .@"struct" => flags.Flatten(field.type),
                 else => field.type,
             };
             for (info.fieldTypes, 0..) |U, i| {
                 const Original = if (flags.isPathed(U)) flags.OriginalType(U) else U;
-                switch (flags.fieldFlag(Original)) {
-                    .dissolve => {
-                        if (Original == Flattened) {
-                            const Aliased = flags.AliasType(U);
-                            info.fieldNames[i] = field.name;
-                            info.fieldTypes[i] = Aliased;
-                            const default = if (info.fieldAttributes[i].defaultValue(U)) |default|
-                                &(struct {
-                                    const value: Aliased = flags.aliasUnwrap(default);
-                                }).value
-                            else
-                                null;
-                            info.fieldAttributes[i].default_value_ptr = default;
-                            continue :field;
-                        }
-                    },
-                    .implicit, .leaf, .owned => {
-                        if (Original == Flattened) {
-                            info.fieldNames[i] = field.name;
-                            info.fieldTypes[i] = Original;
-                            info.fieldAttributes[i].default_value_ptr =
-                                if (info.fieldAttributes[i].defaultValue(U)) |default|
-                                    &(struct {
-                                        const value: Original = flags.originalType(default);
-                                    }).value
-                                else
-                                    null;
-                            continue :field;
-                        }
-                    },
-                    // composed should be out of runtime
-                    .composed => unreachable,
+                const fits = Original == Flattened;
+                if (fits) {
+                    info.fieldNames[i] = field.name;
                 }
             }
         }
+
+        for (info.fieldTypes, flags.getFieldFlags(T), 0..) |Field, flag, i| {
+            const Original = if (flags.isPathed(Field)) flags.OriginalType(Field) else Field;
+            const Type, const default = switch (flag) {
+                .dissolve => .{
+                    flags.AliasType(Original),
+                    if (info.fieldAttributes[i].defaultValue(Field)) |default|
+                        &(struct {
+                            const value = flags.aliasUnwrap(default);
+                        }).value
+                    else
+                        null,
+                },
+                .implicit, .leaf, .owned => .{
+                    Original,
+                    if (info.fieldAttributes[i].defaultValue(Field)) |default|
+                        &(struct {
+                            const value: Original = flags.originalType(default);
+                        }).value
+                    else
+                        null,
+                },
+                // composition shouldn't be here
+                .composed => unreachable,
+            };
+            info.fieldAttributes[i].default_value_ptr = default;
+            info.fieldTypes[i] = Type;
+        }
+
         return info.Construct();
     }
 };
+
+test Signature {
+    const NamedCase = struct {
+        signature: Signature,
+        input: type,
+        expected: type,
+    };
+
+    const QualifiesCase = struct {
+        signature: Signature,
+        input: type,
+        expected: bool,
+    };
+
+    const Empty = struct {};
+
+    const namedTests: []const NamedCase = &.{
+        NamedCase{
+            .signature = comptime Signature.fromStruct(Empty),
+            .input = Empty,
+            .expected = Empty,
+        },
+        NamedCase{
+            .signature = comptime Signature.fromStruct(Empty),
+            .input = struct { u32 },
+            .expected = struct { u32 },
+        },
+        NamedCase{
+            .signature = comptime Signature.fromStruct(struct { item: u32 }),
+            .input = struct { u32 },
+            .expected = struct { item: u32 },
+        },
+        NamedCase{
+            .signature = comptime Signature.fromStruct(struct {
+                item: u32,
+            }),
+            .input = struct { u32 },
+            .expected = struct { item: u32 },
+        },
+    };
+
+    const qualifyTests: []const QualifiesCase = &.{
+        QualifiesCase{
+            .signature = comptime Signature.fromStruct(Empty),
+            .input = Empty,
+            .expected = true,
+        },
+        QualifiesCase{
+            .signature = comptime Signature.fromStruct(struct { u32, usize }),
+            .input = Empty,
+            .expected = false,
+        },
+        QualifiesCase{
+            .signature = comptime Signature.fromStruct(struct { u32, usize }),
+            .input = struct { u32 },
+            .expected = false,
+        },
+        QualifiesCase{
+            .signature = comptime Signature.fromStruct(struct { u32, usize }),
+            .input = struct { u32, usize },
+            .expected = true,
+        },
+    };
+
+    inline for (namedTests) |case| {
+        const Named = case.signature.NamedType(case.signature.NamedType(case.input));
+        try std.testing.expect(util.fieldsEql(case.expected, Named) == null);
+    }
+
+    inline for (qualifyTests) |case| {
+        try std.testing.expectEqual(case.expected, case.signature.qualifies(case.input));
+    }
+}
 
 /// Checks whether the inputed system type qualifies according to `fields`
 pub fn qualifies(comptime System: type) bool {
