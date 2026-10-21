@@ -306,7 +306,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             ///> **NOTE**:
             ///>    - see also [appendDeferred](#mangle.Registry.RegistryInformation.dropDeferred)
             ///>    - `value` **must** be a pointer to a value
-            pub fn dropDeferred(self: *RegistryT, value: anytype) std.mem.Allocator!void {
+            pub fn dropDeferred(self: *RegistryT, value: anytype) std.mem.Allocator.Error!void {
                 const info = switch (@typeInfo(@TypeOf(value))) {
                     .pointer => |p| p,
                     else => @compileError("Error: type '" ++ @typeName(value) ++ "' is not a pointer!"),
