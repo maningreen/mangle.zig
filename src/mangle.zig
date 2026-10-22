@@ -140,12 +140,12 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
 
         for (requestedSystems) |System| {
             system.expectQualifies(System) catch |err| switch (err) {
-                .MissingFunction => @compileLog("Error: requested system '" ++ @typeName(system) ++ "' has no decl `.receive` or `.process`!"),
-                .InvalidFunctionArguments => @compileLog("Error: requested system '" ++ @typeName(system) ++ " has invalid arguments on `.receive` or `.process`!"),
-                .InvalidFunctionType => @compileLog("Error: requested system '" ++ @typeName(system) ++ "' does not have a function for `.receive` or `.process`!"),
-                .MissingRequirements => @compileLog("Error: requested system '" ++ @typeName(system) ++ "' does not have a decl named `.requirements`!"),
-                .InvalidRequirementType => @compileLog("Error: requested system '" ++ @typeName(system) ++ "' does not have `.requirements` as a signature!"),
-                .NotStruct => @compileLog("Error: requested system '" ++ @typeName(System) ++ "' is a " ++ @tagName(@typeInfo(System)) ++ " not a struct!"),
+                error.MissingFunction => @compileError("Error: requested system '" ++ @typeName(system) ++ "' has no decl `.receive` or `.process`!"),
+                error.InvalidFunctionArguments => @compileError("Error: requested system '" ++ @typeName(system) ++ " has invalid arguments on `.receive` or `.process`!"),
+                error.InvalidFunctionType => @compileError("Error: requested system '" ++ @typeName(system) ++ "' does not have a function for `.receive` or `.process`!"),
+                error.MissingRequirements => @compileError("Error: requested system '" ++ @typeName(system) ++ "' does not have a decl named `.requirements`!"),
+                error.InvalidRequirementType => @compileError("Error: requested system '" ++ @typeName(system) ++ "' does not have `.requirements` as a signature!"),
+                error.NotStruct => @compileError("Error: requested system '" ++ @typeName(System) ++ "' is a " ++ @tagName(@typeInfo(System)) ++ " not a struct!"),
             };
         }
 
