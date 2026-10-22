@@ -439,18 +439,28 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             /// The original types inputted to the system.
             pub const originalTypes: []const type = types;
 
-            /// Prints the systems top-level types qualify for.
+            /// Prints the systems top-level types & owned fields qualify for.
             ///
             /// Runs automatically on `@import("builtin").mode == .debug`, doesn't otherwise
             pub fn logQualify() void {
-                inline for (types) |T| {
-                    std.debug.print("Type '{}' qualifies for system(s): ", .{T});
-                    inline for (systems) |Sys| {
-                        if (Sys.requirements.qualifies(T)) {
-                            std.debug.print("'{}', ", .{Sys});
-                        }
+                inline for (originalTypes) |T| {
+                    printTypeQualifies(T, @typeName(T));
+                }
+            }
+
+            fn printTypeQualifies(comptime T: type, comptime prefix: []const u8) void {
+                std.debug.print("Type '{s}' qualifies for system(s): ", .{prefix});
+                inline for (systems) |Sys| {
+                    if (Sys.requirements.qualifies(T)) {
+                        std.debug.print("'{}', ", .{Sys});
                     }
-                    std.debug.print("\n", .{});
+                }
+                std.debug.print("\n", .{});
+                inline for (@typeInfo(T).@"struct".field_types, @typeInfo(T).@"struct".field_names, comptime flags.getFieldFlags(T)) |U, name, flag| {
+                    switch (flag) {
+                        .owned => printTypeQualifies(U, prefix ++ "." ++ name),
+                        else => {},
+                    }
                 }
             }
         };
