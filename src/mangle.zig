@@ -128,14 +128,13 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
         // create structure of arrays
         var valueTypes: [types.len]type = undefined;
         var retyped: [types.len]type = undefined;
-        var dropItem: [types.len]type = undefined;
+        var dropItem: [types.len]type = @splat(Array(usize));
         for (types, 0..) |T, i| {
             _ = getTypeIsLegal(T);
             if (@typeInfo(T) != .@"struct")
                 @compileError("Error: type '" ++ @typeName(T) ++ "' is not a structure!");
             retyped[i] = TypeTransform(T);
             valueTypes[i] = Array(retyped[i]);
-            dropItem[i] = Array(*retyped[i]);
         }
 
         for (requestedSystems) |System| {
@@ -336,7 +335,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                         } else @compileError("Error: type '" ++ @typeName(T) ++ "' is not anywhere in the registry");
                     }
                 };
-                try self.dropQueue[i].append(self.info.gpa, @ptrCast(value));
+                try self.dropQueue[i].append(self.info.gpa, @as(*allTypes[i], @ptrCast(value)) - self.data[i].items.ptr);
             }
 
             /// information provided to every system as the final argument.
@@ -378,30 +377,17 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             /// invalidates pointers
             fn drop(self: *RegistryT) void {
                 inline for (&self.dropQueue, &self.data) |*queue, *array| {
-                    for (queue.items) |ptr| {
-                        self.itemDeinit(ptr);
+                    for (queue.items) |index| {
+                        self.itemDeinit(&array.items[index]);
                     }
 
-                    // this is a little hacky, but here's what we're doing.
-                    // we take the drop queue, since @sizeOf(*T) == usize, we'll cast []T -> []usize.
-                    // then from there, we'll sort and use `.orderedRemoveMany`
-                    // we can sort unstable. that helps a little.
-                    //
-                    // TODO: make this an untagged union, making it *actually* valid instead of... this
-
-                    const initial: usize = @intFromPtr(array.items.ptr);
-                    const casted: []usize = @ptrCast(queue.items);
-                    for (queue.items, casted) |item, *index| {
-                        index.* = @intFromPtr(item) - initial;
-                    }
-
-                    std.mem.sortUnstable(usize, casted, {}, (struct {
+                    std.mem.sortUnstable(usize, queue.items, {}, (struct {
                         fn lessThan(_: void, a: usize, b: usize) bool {
                             return a < b;
                         }
                     }).lessThan);
 
-                    array.orderedRemoveMany(casted);
+                    array.orderedRemoveMany(queue.items);
                     queue.clearAndFree(self.info.gpa);
                 }
             }
