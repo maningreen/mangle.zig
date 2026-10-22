@@ -305,35 +305,40 @@ test Signature {
     }
 }
 
-/// Checks whether the inputed system type qualifies according to `fields`
 pub fn qualifies(comptime System: type) bool {
+    (comptime expectQualifies(System)) catch return false;
+    return true;
+}
+
+/// Checks whether the inputed system type qualifies according to `fields`, returning a comprehensive error set
+pub fn expectQualifies(comptime System: type) QualifyError!void {
     comptime {
         switch (@typeInfo(System)) {
             .@"struct" => {
                 const hasProc = hasProcess(System);
                 const hasreceive = hasReceive(System);
-                if (!(hasProc or hasreceive)) return false;
+                if (!(hasProc or hasreceive)) return QualifyError.MissingFunction;
                 for (&.{ .{ hasProc, fields.process }, .{ hasreceive, fields.receive } }) |value| {
                     const has, const func = value;
                     if (!has) continue;
                     const funcInfo = switch (@typeInfo(@TypeOf(@field(System, func.name)))) {
                         .@"fn" => |i| i,
-                        else => return false,
+                        else => return QualifyError.InvalidFunctionType,
                     };
                     outer: for (funcInfo.param_types) |Param| {
                         for (func.fields) |arg| {
                             if (Param == arg.type)
                                 continue :outer;
-                        } else return false;
+                        } else return QualifyError.InvalidFunctionArguments;
                     }
                 }
                 if (@hasDecl(System, fields.signature.name)) {
                     if (@TypeOf(@field(System, fields.signature.name)) != fields.signature.Type)
-                        return false;
-                } else return false;
-                return true;
+                        return QualifyError.InvalidRequirementType;
+                } else return QualifyError.MissingRequirements;
+                return;
             },
-            else => return false,
+            else => return QualifyError.NotStruct,
         }
     }
 }
@@ -347,3 +352,13 @@ pub fn hasReceive(comptime Sys: type) bool {
 pub fn hasProcess(comptime Sys: type) bool {
     return @hasDecl(Sys, fields.process.name);
 }
+
+pub const QualifyError = error {
+    MissingFunction,
+    InvalidFunctionArguments,
+    InvalidFunctionType,
+    MissingRequirements,
+    InvalidRequirementType,
+
+    NotStruct,
+};

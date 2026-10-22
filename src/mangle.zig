@@ -138,8 +138,16 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             dropItem[i] = Array(*retyped[i]);
         }
 
-        for (requestedSystems) |System|
-            std.debug.assert(system.qualifies(System));
+        for (requestedSystems) |System| {
+            system.expectQualifies(System) catch |err| switch (err) {
+                error.MissingFunction => @compileError("Error: requested system '" ++ @typeName(system) ++ "' has no decl `.receive` or `.process`!"),
+                error.InvalidFunctionArguments => @compileError("Error: requested system '" ++ @typeName(system) ++ " has invalid arguments on `.receive` or `.process`!"),
+                error.InvalidFunctionType => @compileError("Error: requested system '" ++ @typeName(system) ++ "' does not have a function for `.receive` or `.process`!"),
+                error.MissingRequirements => @compileError("Error: requested system '" ++ @typeName(system) ++ "' does not have a decl named `.requirements`!"),
+                error.InvalidRequirementType => @compileError("Error: requested system '" ++ @typeName(system) ++ "' does not have `.requirements` as a signature!"),
+                error.NotStruct => @compileError("Error: requested system '" ++ @typeName(System) ++ "' is a " ++ @tagName(@typeInfo(System)) ++ " not a struct!"),
+            };
+        }
 
         const DataType = @Tuple(&valueTypes);
         const AppendType = DataType;
@@ -439,18 +447,28 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             /// The original types inputted to the system.
             pub const originalTypes: []const type = types;
 
-            /// Prints the systems top-level types qualify for.
+            /// Prints the systems top-level types & owned fields qualify for.
             ///
             /// Runs automatically on `@import("builtin").mode == .debug`, doesn't otherwise
             pub fn logQualify() void {
-                inline for (types) |T| {
-                    std.debug.print("Type '{}' qualifies for system(s): ", .{T});
-                    inline for (systems) |Sys| {
-                        if (Sys.requirements.qualifies(T)) {
-                            std.debug.print("'{}', ", .{Sys});
-                        }
+                inline for (originalTypes) |T| {
+                    printTypeQualifies(T, @typeName(T));
+                }
+            }
+
+            fn printTypeQualifies(comptime T: type, comptime prefix: []const u8) void {
+                std.debug.print("Type '{s}' qualifies for system(s): ", .{prefix});
+                inline for (systems) |Sys| {
+                    if (Sys.requirements.qualifies(T)) {
+                        std.debug.print("'{}', ", .{Sys});
                     }
-                    std.debug.print("\n", .{});
+                }
+                std.debug.print("\n", .{});
+                inline for (@typeInfo(T).@"struct".field_types, @typeInfo(T).@"struct".field_names, comptime flags.getFieldFlags(T)) |U, name, flag| {
+                    switch (flag) {
+                        .owned => printTypeQualifies(U, prefix ++ "." ++ name),
+                        else => {},
+                    }
                 }
             }
         };
