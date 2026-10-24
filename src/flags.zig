@@ -170,7 +170,13 @@ pub fn Reduce(comptime T: type, comptime flag: Flags) type {
 
         for (deconstructed.fieldTypes, 0..) |V, i| {
             if (@typeInfo(V) == .@"struct") {
-                deconstructed.fieldTypes[i] = Reduce(V, flag);
+                const ReducedField = Reduce(V, flag);
+                if (deconstructed.fieldAttributes[i].defaultValue(V)) |default| {
+                    deconstructed.fieldAttributes[i].default_value_ptr = &struct {
+                        const static: ReducedField = reduce(default, flag);
+                    }.static;
+                }
+                deconstructed.fieldTypes[i] = ReducedField;
             }
         }
 
