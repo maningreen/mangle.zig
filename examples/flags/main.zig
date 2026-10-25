@@ -79,8 +79,8 @@ const DrawParticle = struct {
 const MoveParticle = struct {
     pub const requirements: mangle.system.Signature = .{
         .fields = &.{
-            .{ .name = "pos", .type = Position },
-            .{ .name = "vel", .type = Velocity },
+            .{ .name = "pos", .schema = .{ .simple = Position } },
+            .{ .name = "vel", .schema = .{ .simple = Velocity } },
         },
     };
 
@@ -92,8 +92,8 @@ const MoveParticle = struct {
 const WrapParticle = struct {
     pub const requirements: mangle.system.Signature = .{
         .fields = &.{
-            .{ .name = "pos", .type = Position },
-            .{ .name = "_", .type = Wrap },
+            .{ .name = "pos", .schema = .{ .simple = Position } },
+            .{ .name = "_", .schema = .{ .simple = Wrap } },
         },
     };
 
@@ -108,9 +108,9 @@ const WrapParticle = struct {
 const BounceParticle = struct {
     pub const requirements: mangle.system.Signature = .{
         .fields = &.{
-            .{ .name = "pos", .type = Position },
-            .{ .name = "vel", .type = Velocity },
-            .{ .name = "_", .type = Bounce },
+            .{ .name = "pos", .schema = .{ .simple = Position } },
+            .{ .name = "vel", .schema = .{ .simple = Velocity } },
+            .{ .name = "_", .schema = .{ .simple = Bounce } },
         },
     };
 
@@ -125,9 +125,9 @@ const BounceParticle = struct {
 const ReplicateSystem = struct {
     pub const requirements: mangle.system.Signature = .{
         .fields = &.{
-            .{ .name = "pos", .type = Position },
-            .{ .name = "vel", .type = Velocity },
-            .{ .name = "copy", .type = ReplicateData },
+            .{ .name = "pos", .schema = .{ .simple = Position } },
+            .{ .name = "vel", .schema = .{ .simple = Velocity } },
+            .{ .name = "copy", .schema = .{ .simple = ReplicateData } },
         },
     };
 

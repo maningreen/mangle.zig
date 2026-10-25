@@ -30,11 +30,11 @@ const MessageSystem = struct {
                 // The reason is `.type` is the only thing used in matching.
                 // `str` is just how the system will access it.
                 .name = "str",
-                .type = []const u8,
+                .schema = .{ .simple = []const u8 },
             },
             .{
                 .name = "key",
-                .type = u8,
+                .schema = .{ .simple = u8 },
             },
         },
     };
