@@ -197,7 +197,6 @@ pub const requirements: mangle.system.Signature = .{
 ```
 
 > [!TIP]
-
 > You may also use the function `mangle.system.Signature.fromStruct`, which has the following syntax, semantically equal to that above.
 > ```zig
 > pub const requirements = mangle.system.Signature.fromStruct(struct {
