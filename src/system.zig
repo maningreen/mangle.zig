@@ -113,7 +113,7 @@ pub const Signature = struct {
             simple: type,
 
             /// Supplies field types into the function will match according to result.
-            typeclass: fn (comptime type) bool,
+            duck: fn (comptime type) bool,
 
             /// Matches { 0, 1, 2 ... } => [N]T
             ///
@@ -142,7 +142,7 @@ pub const Signature = struct {
                             .composed => unreachable,
                         }
                     },
-                    .typeclass => |@"fn"| @"fn"(if (flags.isPathed(T)) flags.OriginalType(T) else T),
+                    .duck => |@"fn"| @"fn"(if (flags.isPathed(T)) flags.OriginalType(T) else T),
                     .array => {
                         switch (@typeInfo(T)) {
                             .array => |i| continue :match Schema{ .simple = [i.len]T },
