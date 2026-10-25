@@ -77,10 +77,13 @@ pub const fields = struct {
 };
 
 pub const Signature = struct {
+    /// Requirements
+    fields: []const Item,
+
     /// Used to represent a signature requirement
     pub const Item = struct {
         /// Used to filter qualifications
-        type: type,
+        schema: Schema,
 
         /// Used for systems to use dot syntax access
         /// Ignored in qualifications
@@ -103,10 +106,53 @@ pub const Signature = struct {
             /// If the field is present, matching fails
             excluded,
         };
-    };
 
-    /// Requirements
-    fields: []const Item,
+        pub const Schema = union(enum) {
+            /// Most simple, checks equality.
+            /// Also default behavior on .fromStruct()
+            simple: type,
+
+            /// Supplies field types into the function will match according to result.
+            typeclass: fn (comptime type) bool,
+
+            /// Matches { 0, 1, 2 ... } => [N]T
+            ///
+            /// Matches with any arrays of length `N`
+            array: type,
+
+            fn matches(comptime self: Schema, comptime T: type, comptime isComptime: bool) bool {
+                return comptime match: switch (self) {
+                    .simple => |U| blk: {
+                        switch (flags.fieldFlag(U)) {
+                            .implicit, .dissolve => {},
+                            else => |flag| @compileError("Requirement '" ++ @tagName(T) ++ "' is flagged as '" ++ @tagName(flag) ++ "'!"),
+                        }
+                        const Map = if (@typeInfo(U) == .@"struct") flags.Flatten(U) else U;
+                        const Original = if (flags.isPathed(T)) flags.OriginalType(T) else T;
+                        const flag = flags.fieldFlag(Original);
+                        flag: switch (flag) {
+                            .implicit => if (Original == Map)
+                                break :blk true
+                            else
+                                continue :flag (if (isComptime) .leaf else .owned),
+                            .owned => break :blk Original == Map,
+                            .leaf => break :blk Original == Map,
+                            .dissolve => break :blk Original == U,
+
+                            .composed => unreachable,
+                        }
+                    },
+                    .typeclass => |@"fn"| @"fn"(if (flags.isPathed(T)) flags.OriginalType(T) else T),
+                    .array => {
+                        switch (@typeInfo(T)) {
+                            .array => |i| continue :match Schema{ .simple = [i.len]T },
+                            else => false,
+                        }
+                    },
+                };
+            }
+        };
+    };
 
     /// returns whether or not a structure (if not structure returns whether or not it is contained)
     /// qualifies for the signature
@@ -119,29 +165,12 @@ pub const Signature = struct {
         inline for (self.fields) |requirement| {
             if (requirement.status == .optional) continue;
 
-            const U = switch (@typeInfo(requirement.type)) {
-                .@"struct" => flags.Flatten(requirement.type),
-                else => requirement.type,
-            };
-
             inline for (info.field_types, info.field_attrs) |Type, attr| {
-                switch (flags.fieldFlag(Type)) {
-                    .composed => unreachable,
-                    else => {
-                        const Original = comptime if (flags.isPathed(Type)) flags.OriginalType(Type) else Type;
-                        const contains = comptime lb: switch (flags.fieldFlag(requirement.type)) {
-                            .owned => U == Original,
-                            .leaf => U == Original,
-                            .dissolve => U == Original,
-                            .composed => unreachable,
-                            .implicit => continue :lb if (attr.@"comptime") .leaf else .owned,
-                        };
-                        switch (requirement.status) {
-                            .required => if (contains) break,
-                            .excluded => if (contains) return false,
-                            else => unreachable,
-                        }
-                    },
+                const matches = requirement.schema.matches(Type, attr.@"comptime");
+                switch (comptime requirement.status) {
+                    .required => if (matches) break,
+                    .excluded => if (matches) return false,
+                    .optional => unreachable,
                 }
             } else {
                 return false;
@@ -159,7 +188,7 @@ pub const Signature = struct {
         };
         comptime var collectFields: [info.field_names.len]Item = undefined;
         for (info.field_names, info.field_types, 0..) |fieldName, Field, i| {
-            collectFields[i] = .{ .name = fieldName, .type = Field };
+            collectFields[i] = .{ .name = fieldName, .schema = .{ .simple = Field } };
         }
         const U = struct {
             const fields: [info.field_names.len]Item = collectFields;
@@ -186,16 +215,10 @@ pub const Signature = struct {
             @compileError("Error, type '" ++ @typeName(flags.OriginalType(T)) ++ "' does not qualify!");
         }
 
-        for (self.fields) |field| {
-            const Flattened = switch (@typeInfo(field.type)) {
-                .@"struct" => flags.Flatten(field.type),
-                else => field.type,
-            };
-            for (info.fieldTypes, 0..) |U, i| {
-                const Original = if (flags.isPathed(U)) flags.OriginalType(U) else U;
-                const fits = Original == Flattened;
-                if (fits) {
-                    info.fieldNames[i] = field.name;
+        for (self.fields) |requirement| {
+            for (info.fieldTypes, info.fieldAttributes, 0..) |U, attrs, i| {
+                if (requirement.schema.matches(U, attrs.@"comptime")) {
+                    info.fieldNames[i] = requirement.name;
                 }
             }
         }
@@ -353,7 +376,7 @@ pub fn hasProcess(comptime Sys: type) bool {
     return @hasDecl(Sys, fields.process.name);
 }
 
-pub const QualifyError = error {
+pub const QualifyError = error{
     MissingFunction,
     InvalidFunctionArguments,
     InvalidFunctionType,
