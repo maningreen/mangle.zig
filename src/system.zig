@@ -139,8 +139,8 @@ pub const Signature = struct {
                         }
                     },
                     .duck => |@"fn"| @"fn"(if (flags.isPathed(T)) flags.OriginalType(T) else T),
-                    .array => switch (@typeInfo(T)) {
-                        .array => |i| continue :match Schema{ .simple = [i.len]T },
+                    .array => |Child| switch (@typeInfo(T)) {
+                        .array => |i| continue :match Schema{ .simple = [i.len]Child },
                         else => false,
                     },
                 };
@@ -379,3 +379,39 @@ pub const QualifyError = error{
 
     NotStruct,
 };
+
+test "Signature.Item.Schema" {
+    const Case = struct {
+        type: type,
+        @"comptime": bool = false,
+        schema: Signature.Item.Schema,
+        expects: bool = true,
+    };
+
+    const cases: []const Case = &.{
+        Case{
+            .type = u32,
+            .schema = .{ .simple = u32 },
+        },
+        Case{
+            .type = struct { u32, []const u8 },
+            .schema = .{ .simple = struct { u32, []const u8 } },
+        },
+        Case{
+            .type = [3]u8,
+            .schema = .{ .array = u8 },
+        },
+        Case{
+            .type = [3][3]u8,
+            .schema = .{ .array = [3]u8 },
+        },
+    };
+
+    inline for (cases) |case| {
+        const matches = case.schema.matches(case.type, case.@"comptime");
+        const good = matches == case.expects;
+        if (!good)
+            std.testing.failPrint("Schema test error: {} {}", .{ case, case.schema.matches(case.type, case.@"comptime") });
+        try std.testing.expect(good);
+    }
+}
