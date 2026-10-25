@@ -186,16 +186,68 @@ A system signature could be defined as follows
 ```zig
 pub const requirements: mangle.system.Signature = .{
     .fields = &.{
-        .{ .name = "message", .type = []const u8 },
+        .{
+            .name = "message",
+            .schema = .{
+                .simple = []const u8
+            },
+        },
     },
 };
 ```
 
-You may also use the builtin function `mangle.system.Signature.fromStruct`, which has the following syntax, semantically equal to the above.
+> [!TIP]
+
+> You may also use the function `mangle.system.Signature.fromStruct`, which has the following syntax, semantically equal to that above.
+> ```zig
+> pub const requirements = mangle.system.Signature.fromStruct(struct {
+>     // The name of the field is `.name`, and the type `.schema.simple`
+>     // Note, this does limit you to .schema.simple and .status = .required
+>     message: []const u8,
+> });
+> ```
+
+#### Field Schemas
+
+A `Schema` is the term used for the method of matching.
+There are three types: `.simple`, `.array`, and `.duck`
+
+`.simple: type` is most common, as it's a type equivalence, it's also what `.fromStruct()` uses.
+
+| Schema | Complexity | Type | Behavior / Usecase |
+|-|-|-|-|
+| `.simple` | Low | `type` | Use when a system requires a particular field type. |
+| `.array`  | Medium | `type` | When a system requires a field to be an array, but of no particular length. `.array = u8` would match with `[1]u8` and `[N]u8` |
+| `.duck` | High | `fn (comptime type) bool` | A `duck` is a type which qualifies under some requirements. Each field is inputted into the function, and that's how qualification is figured out. Return `true` for qualifies, `false` for doesn't |
+
+
+An example is as follows 
 ```zig
-pub const requirements = mangle.system.Signature.fromStruct(struct {
-    message: []const u8,
-})
+pub const requirements = mangle.system.Signature{
+    items = &.{
+        // A simple example, this field woud match with `struct { u32 }`
+        .{ .name = "id", .schema = .{ .simple = u32 } },
+        // This would match with any array of u8, such as [0]u8, [1]u8, [2]u8...
+        .{ .name = "message", .schema = .{ .array = u8 } },
+        // This would match with the following
+        // struct { name: u32, address: []const u8 },
+        // struct { name: void, address: void },
+        // struct { name: usize, address: [16]u8 },
+        // struct { name: []const u8, address: [16]u8, index: usize },
+        // and many more.
+        .{ .name = "recipient", .schema = .{ .duck = isValidRecipient } },
+    };
+};
+
+/// A simple duck.
+fn isValidRecipient(comptime T: type) bool {
+    switch (@typeInfo(T)) {
+        .@"struct" => {},
+        else return false,
+    };
+
+    return @hasField(T, "name") and @hasField(T, "address");
+}
 ```
 
 #### Field Statuses
@@ -218,11 +270,11 @@ An example of a complex signature is as follows.
 pub const requirements: mangle.system.Signature = .{
     .fields = &.{
         // Explicit setting of `.status` to `.required` is unnecessary, but can show intent.
-        .{ .name = "message", .type = []const u8, .status = .required },
-        .{ .name = "sender", .type = u32, .status = .optional },
+        .{ .name = "message", .type = .{ .simple = []const u8 }, .status = .required },
+        .{ .name = "sender", .type = .{ .simple = u32 }, .status = .optional },
         // The `name` field on this one is unused, and could technically be anything
         // You should still provide a name for readability's sake.
-        .{ .name = "invalid", .type = void, .status = .excluded },
+        .{ .name = "invalid", .schema = .{ .simple = void }, .status = .excluded },
     },
 };
 ```
