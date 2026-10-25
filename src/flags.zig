@@ -695,6 +695,9 @@ pub fn originalType(value: anytype) OriginalType(@TypeOf(value)) {
     } else return value;
 }
 
+/// If `@typeInfo(T) == .@"struct"` and `T` is the output of [Path](#mangle.flags.Path), returns true.
+///
+/// Otherwise false.
 pub fn isPathed(comptime T: type) bool {
     return comptime switch (@typeInfo(T)) {
         .@"struct" => @hasField(T, formats.identity),
