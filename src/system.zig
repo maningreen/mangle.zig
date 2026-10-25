@@ -139,11 +139,9 @@ pub const Signature = struct {
                         }
                     },
                     .duck => |@"fn"| @"fn"(if (flags.isPathed(T)) flags.OriginalType(T) else T),
-                    .array => {
-                        switch (@typeInfo(T)) {
-                            .array => |i| continue :match Schema{ .simple = [i.len]T },
-                            else => false,
-                        }
+                    .array => switch (@typeInfo(T)) {
+                        .array => |i| continue :match Schema{ .simple = [i.len]T },
+                        else => false,
                     },
                 };
             }
