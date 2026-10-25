@@ -123,10 +123,6 @@ pub const Signature = struct {
             fn matches(comptime self: Schema, comptime T: type, comptime isComptime: bool) bool {
                 return comptime match: switch (self) {
                     .simple => |U| blk: {
-                        switch (flags.fieldFlag(U)) {
-                            .implicit, .dissolve => {},
-                            else => |flag| @compileError("Requirement '" ++ @tagName(T) ++ "' is flagged as '" ++ @tagName(flag) ++ "'!"),
-                        }
                         const Map = if (@typeInfo(U) == .@"struct") flags.Flatten(U) else U;
                         const Original = if (flags.isPathed(T)) flags.OriginalType(T) else T;
                         const flag = flags.fieldFlag(Original);
