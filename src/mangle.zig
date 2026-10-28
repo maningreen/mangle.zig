@@ -221,6 +221,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             pub fn process(self: *@This(), delta: f32) !void {
                 self.info.delta = delta;
                 inline for (allTypes) |T| {
+                    @setEvalBranchQuota(@typeInfo(T).@"struct".field_names.len * systems.len * 100);
                     const arr = self.getArrayFromType(T);
                     inline for (systems) |Sys|
                         if (comptime system.hasProcess(Sys))
@@ -411,6 +412,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             pub fn emit(self: *RegistryT, event: anytype) !void {
                 inline for (allTypes) |T| {
                     const arr = self.getArrayFromType(T);
+                    @setEvalBranchQuota(@typeInfo(T).@"struct".field_names.len * systems.len * 100);
                     inline for (systems) |Sys|
                         if (comptime system.hasReceive(Sys))
                             for (arr.items) |*value|
