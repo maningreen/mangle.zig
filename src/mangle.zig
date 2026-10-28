@@ -146,6 +146,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 error.InvalidRequirementType => @compileError("Error: requested system '" ++ @typeName(system) ++ "' does not have `.requirements` as a signature!"),
                 error.NotStruct => @compileError("Error: requested system '" ++ @typeName(System) ++ "' is a " ++ @tagName(@typeInfo(System)) ++ " not a struct!"),
             };
+            @setEvalBranchQuota(System.requirements.fields.len * types.len * 500);
         }
 
         const DataType = @Tuple(&valueTypes);
