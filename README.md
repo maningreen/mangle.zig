@@ -354,11 +354,11 @@ There's a **flag** for each of these cases, respectively:
     - [leaf](#leaft)
     - [dissolve](#aliast)
 
-Note, if unspecified, it's implicit, which defaults to ownership *most of the time*.[^comptime-fields]
+Note, if unspecified, it's implicit, which defaults to ownership *most of the time*.[^flag-exceptions]
 
 ### Own(T)
 
-Ownership is the default behavior for substructures[^comptime-fields].
+Ownership is the default behavior for substructures[^flag-exceptions].
 Ownership can explicitly be stated with `Own(T)`.
 
 ```zig
@@ -526,6 +526,14 @@ The following is what's permitted on comptime fields.
 | [Compose(T)](#composet) | Illegal |
 | [Own(T)](#ownt) | Illegal |
 
+#### Extern and Packed Structs
+
+Extern structs and Packed structs are treated like a leaf.
+Extern structs because embedding pathing information isn't possible without removing the `extern` attribute.
+Packed structs are more likely to become supported for ownership, but as of now are not.
+
+'Owning' an extern/packed struct currently isn't possible.
+
 #### Unions
 
 Currently[^1] unions are classified as a `leaf`, and therefore aren't recursed into, or even considered to be able to.
@@ -539,4 +547,4 @@ If you want to remedy this create a system which will unwrap the union and provi
 Docs are hosted online [here](https://maningreen.github.io/mangle.zig/)
 
 <!-- Footnotes -->
-[^comptime-fields]: Comptime fields default to `leaf` behavior. See more [here](#comptime-fields)
+[^flag-exceptions]: Comptime fields and extern/packed structs default to `leaf` behavior. See more about [comptime fields](#comptime-fields) and [other structs](#extern-and-packed-structs)

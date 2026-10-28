@@ -306,11 +306,18 @@ pub fn isFlagFormat(str: []const u8) bool {
 
 /// Given type T
 /// Looks at fields for metadata
-/// If not `@typeInfo(T) == .@"struct"`
-/// returns .leaf
+///
+/// Special cases 
+///     - @typeInfo(T) != .@"struct" => .leaf
+///     - @typeInfo(T).@"struct".layout != .auto => .leaf
 pub fn fieldFlag(comptime T: type) Flags {
     switch (@typeInfo(T)) {
-        .@"struct" => {},
+        .@"struct" => |i| {
+            switch (i.layout) {
+                .auto => {},
+                .@"extern", .@"packed" => return .leaf,
+            }
+        },
         else => return .leaf,
     }
     inline for (&.{ .leaf, .composed, .dissolve, .owned }) |flag| {
