@@ -198,6 +198,7 @@ pub const Signature = struct {
     ///> - `self.NamedType(T) != T` when `self.qualifies(T)` and `self.fields.len > 0`
     ///> - Asserts `self.qualifies(T)`
     ///> - Returns a memory equivalent type to T[^1]
+    ///> - Will only name the first instance of a requirement
     ///
     ///[^1]: technically not guaranteed.
     pub fn NamedType(comptime self: Signature, comptime T: type) type {
@@ -213,6 +214,7 @@ pub const Signature = struct {
             for (info.fieldTypes, info.fieldAttributes, 0..) |U, attrs, i| {
                 if (requirement.schema.matches(U, attrs.@"comptime")) {
                     info.fieldNames[i] = requirement.name;
+                    break;
                 }
             }
         }
