@@ -307,7 +307,7 @@ pub fn isFlagFormat(str: []const u8) bool {
 /// Given type T
 /// Looks at fields for metadata
 ///
-/// Special cases 
+/// Special cases
 ///     - @typeInfo(T) != .@"struct" => .leaf
 ///     - @typeInfo(T).@"struct".layout != .auto => .leaf
 pub fn fieldFlag(comptime T: type) Flags {
@@ -737,12 +737,20 @@ pub fn getFieldFlags(comptime T: type) [@typeInfo(T).@"struct".field_names.len]F
         .@"struct" => |t| t,
         else => util.typeError(T, .@"struct"),
     };
-    var flags: [info.field_names.len]Flags = undefined;
+    comptime var flags: [info.field_names.len]Flags = undefined;
     inline for (info.field_types, info.field_attrs, 0..) |U, attr, i| {
-        lbl: switch (fieldFlag(U)) {
-            inline .leaf, .dissolve, .composed, .owned => |tag| flags[i] = tag,
-            .implicit => continue :lbl if (attr.@"comptime") .leaf else .owned,
-        }
+        comptime t: switch (U) {
+            else => |V| {
+                switch (@typeInfo(V)) {
+                    .optional => |opt| continue :t opt.child,
+                    else => {},
+                }
+                lbl: switch (fieldFlag(V)) {
+                    inline .leaf, .dissolve, .composed, .owned => |tag| flags[i] = tag,
+                    .implicit => continue :lbl if (attr.@"comptime") .leaf else .owned,
+                }
+            },
+        };
     }
     for (flags) |value|
         std.debug.assert(value != .implicit);
