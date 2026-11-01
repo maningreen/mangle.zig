@@ -547,6 +547,8 @@ If you want to remedy this create a system which will unwrap the union and provi
 Optional fields can be owned, and are so by default.
 However, do note, that a system matching type `T` will not match with type `?T`.
 
+If you do not want this behavior, doing `?Leaf(T)` will negate it.
+
 ## Docs
 
 Docs are hosted online [here](https://maningreen.github.io/mangle.zig/)
