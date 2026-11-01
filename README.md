@@ -112,13 +112,15 @@ Ownership is default behavior.
 ## Systems
 
 A system is used to define behavior for types.
-The namespace for systems is `mangle.system`, for declarations see the [online docs](#docs)
+The namespace for systems is `mangle.system`, for declarations see the [online docs](#docs).
 
 Terminology:
 - [Processing](#processing)
     - [Events](#events)
 - [Signature](#signatures)
     - [Qualification](#type-system-qualification)
+
+In order to see all of the systems each top-level type (and subfields) match to do `Registry.logQualify()`.
 
 ### Definition
 

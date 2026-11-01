@@ -206,9 +206,6 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     appendVal[i] = .empty;
                 }
 
-                if (@import("builtin").mode == .debug)
-                    logQualify();
-
                 return .{
                     .data = data,
                     .appendQueue = appendVal,
