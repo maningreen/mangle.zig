@@ -239,7 +239,7 @@ pub fn layoutEql(comptime T: type, comptime U: type) bool {
 }
 
 pub fn typeError(comptime T: type, comptime target: std.lang.TypeId) noreturn {
-    @compileError("Error, type '" ++ @typeName(T) ++ "' is not a '" ++ @tagName(target) ++ "'");
+    @compileError("type '" ++ @typeName(T) ++ "' is not a '" ++ @tagName(target) ++ "'");
 }
 
 /// internal testing function

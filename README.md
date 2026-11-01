@@ -112,13 +112,15 @@ Ownership is default behavior.
 ## Systems
 
 A system is used to define behavior for types.
-The namespace for systems is `mangle.system`, for declarations see the [online docs](#docs)
+The namespace for systems is `mangle.system`, for declarations see the [online docs](#docs).
 
 Terminology:
 - [Processing](#processing)
     - [Events](#events)
 - [Signature](#signatures)
     - [Qualification](#type-system-qualification)
+
+In order to see all of the systems each top-level type (and subfields) match to do `Registry.logQualify()`.
 
 ### Definition
 
@@ -541,6 +543,13 @@ The reason is because we can't 100% sure assert that a union has particular fiel
 If you want to remedy this create a system which will unwrap the union and provide behavior.
 
 [^1]: this most likely will not change
+
+#### Optionals
+
+Optional fields can be owned, and are so by default.
+However, do note, that a system matching type `T` will not match with type `?T`.
+
+If you do not want this behavior, doing `?Leaf(T)` will negate it.
 
 ## Docs
 
