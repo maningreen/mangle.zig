@@ -323,21 +323,15 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 const T = flags.OriginalType(info.child);
                 const i = comptime blk: {
                     const path = flags.getPath(info.child);
-                    if (path.len > 0) {
-                        var split = std.mem.splitScalar(u8, path, flags.pathing.path_delimiter);
-                        const uName = split.first();
-                        for (RegistryT.originalTypes, 0..) |U, i| {
-                            if (util.strEql(@typeName(U), uName))
-                                break :blk i;
-                        } else @compileError(
-                            "Error: type '" ++ @typeName(T) ++ "' is not anywhere in the registry",
-                        );
-                    } else {
-                        for (RegistryT.originalTypes, 0..) |U, i| {
-                            if (U == T)
-                                break :blk i;
-                        } else @compileError("Error: type '" ++ @typeName(T) ++ "' is not anywhere in the registry");
-                    }
+                    std.debug.assert(path.len > 0);
+                    var split = std.mem.splitScalar(u8, path, flags.pathing.path_delimiter);
+                    const uName = split.first();
+                    for (RegistryT.allTypes, 0..) |U, i| {
+                        if (util.strEql(@typeName(flags.OriginalType(U)), uName))
+                            break :blk i;
+                    } else @compileError(
+                        "Error: type '" ++ @typeName(T) ++ "' is not anywhere in the registry",
+                    );
                 };
                 try self.dropQueue[i].append(self.info.gpa, @as(*allTypes[i], @ptrCast(value)) - self.data[i].items.ptr);
             }
