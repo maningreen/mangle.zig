@@ -28,57 +28,63 @@ test {
     std.testing.refAllDecls(system);
 }
 
-fn applySystems(
-    comptime systems: []const type,
+fn applySystem(
+    comptime Sys: type,
     comptime T: type,
-    /// should be a member of systems
-    comptime function: []const u8,
+    comptime function: std.meta.DeclEnum(Sys),
     value: *T,
     extraArgs: anytype,
 ) !void {
     const info = switch (@typeInfo(T)) {
         .@"struct" => |i| i,
-        else => util.typeError(T, .@"struct"),
+        else => @compileError("Error: Type '" ++ @typeName(T) ++ "' is not a struct!"),
     };
 
-    inline for (info.field_names, info.field_types, comptime flags.getFieldFlags(T)) |field, Field, flag| {
-        switch (comptime flag) {
-            .owned => {
-                switch (@typeInfo(Field)) {
-                    .optional => |opt| {
-                        if (@field(value, field)) |*ptr|
-                            try applySystems(systems, opt.child, function, ptr, extraArgs);
+    inline for (info.field_names, info.field_types, comptime flags.getFieldFlags(T)) |name, U, flag| {
+        switch (@typeInfo(U)) {
+            .@"struct" => {
+                switch (comptime flag) {
+                    .owned => {
+                        switch (@typeInfo(U)) {
+                            .@"struct" => {
+                                try applySystem(
+                                    Sys,
+                                    U,
+                                    function,
+                                    &@field(value, name),
+                                    extraArgs,
+                                );
+                            },
+                            else => {},
+                        }
                     },
-                    else => try applySystems(systems, Field, function, &@field(value, field), extraArgs),
+                    .leaf, .dissolve => continue,
+                    else => @compileError("Flag '" ++ @tagName(flag) ++ "' found present during runtime!"),
                 }
             },
-            .composed => @compileError("type '" ++ @typeName(T) ++ "' has a field '" ++ field ++ "' (" ++ @typeName(Field) ++ ") marked as composed"),
-            .implicit => unreachable,
-            else => {},
+            else => continue,
         }
     }
 
-    inline for (systems) |Sys| {
-        if (comptime !@field(Sys, system.fields.signature.name).qualifies(T)) return;
+    if (comptime !@field(Sys, system.fields.signature.name).qualifies(T)) return;
 
-        const Named = @field(Sys, system.fields.signature.name).NamedType(T);
-        comptime {
-            if (!util.layoutEql(T, Named))
-                @compileError(
-                    \\This is asserted, and if fails, report on github. Also include the type definition for '
-                ++ @typeName(flags.OriginalType(T)) ++
-                    \\' and substructures." You may also want to include the definition for the system '
-                ++ @typeName(Sys) ++
-                    \\'
-                    \\ this is *probably* not your fault, as the function used for this isn't perfect.
-                );
-        }
-        return @call(
-            .auto,
-            @field(Sys, function),
-            .{ Named, @as(*Named, @ptrCast(value)) } ++ extraArgs,
-        );
+    const Named = @field(Sys, system.fields.signature.name).NamedType(T);
+    comptime {
+        if (!util.layoutEql(T, Named))
+            @compileError(
+                \\This is asserted, and if fails, report on github. Also include the type definition for '
+            ++ @typeName(flags.OriginalType(T)) ++
+                \\' and substructures." You may also want to include the definition for the system '
+            ++ @typeName(Sys) ++
+                \\'
+                \\ this is *probably* not your fault, as the function used for this isn't perfect.
+            );
     }
+    return @call(
+        .auto,
+        @field(Sys, @tagName(function)),
+        .{ Named, @as(*Named, @ptrCast(value)) } ++ extraArgs,
+    );
 }
 
 fn getTypeIsLegal(comptime T: type) bool {
@@ -87,14 +93,15 @@ fn getTypeIsLegal(comptime T: type) bool {
         else => util.typeError(T, .@"struct"),
     };
 
-    @setEvalBranchQuota(info.field_names.len * 1000);
     for (info.field_names, info.field_types, info.field_attrs, flags.getFieldFlags(T)) |name, U, attr, flag| {
         switch (@typeInfo(U)) {
             .@"struct" => {
                 if (attr.@"comptime") {
                     switch (flag) {
                         // illegal behavior
-                        .owned, .composed => |tag| @compileError("Error, type '" ++ @typeName(T) ++ "' has a field ('" ++ name ++ "') which is comptime and marked as " ++ @tagName(tag) ++ ", illegal behavior"),
+                        .owned, .composed => |tag| {
+                            @compileError("Error, type '" ++ @typeName(T) ++ "' has a field ('" ++ name ++ "') which is comptime and marked as " ++ @tagName(tag) ++ ", illegal behavior");
+                        },
                         else => {},
                     }
                 }
@@ -146,45 +153,6 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
         const AppendType = DataType;
         const DropType = @Tuple(&dropItem);
 
-        const receiveCount = blk: {
-            var temp = 0;
-            for (requestedSystems) |Sys| {
-                if (system.hasReceive(Sys))
-                    temp += 1;
-            }
-            break :blk temp;
-        };
-        const receiveSystems = blk: {
-            var temp: [receiveCount]type = undefined;
-            var i = 0;
-            for (requestedSystems) |Sys| {
-                if (system.hasReceive(Sys)) {
-                    temp[i] = Sys;
-                    i += 1;
-                }
-            }
-            break :blk temp;
-        };
-        const processCount = blk: {
-            var temp = 0;
-            for (requestedSystems) |Sys| {
-                if (system.hasProcess(Sys))
-                    temp += 1;
-            }
-            break :blk temp;
-        };
-        const processSystems = blk: {
-            var temp: [processCount]type = undefined;
-            var i = 0;
-            for (requestedSystems) |Sys| {
-                if (system.hasProcess(Sys)) {
-                    temp[i] = Sys;
-                    i += 1;
-                }
-            }
-            break :blk temp;
-        };
-
         return struct {
             /// the raw data of all the types, a tuple of @This().array
             /// recommended to not access manually
@@ -205,6 +173,9 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     dropVal[i] = .empty;
                     appendVal[i] = .empty;
                 }
+
+                if (@import("builtin").mode == .debug)
+                    logQualify();
 
                 return .{
                     .data = data,
@@ -252,14 +223,16 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 inline for (allTypes) |T| {
                     @setEvalBranchQuota(@typeInfo(T).@"struct".field_names.len * systems.len * 100);
                     const arr = self.getArrayFromType(T);
-                    for (arr.items) |*value|
-                        try applySystems(
-                            processSystems[0..],
-                            T,
-                            "process",
-                            value,
-                            .{&self.info},
-                        );
+                    inline for (systems) |Sys|
+                        if (comptime system.hasProcess(Sys))
+                            for (arr.items) |*value|
+                                try applySystem(
+                                    Sys,
+                                    T,
+                                    .process,
+                                    value,
+                                    .{&self.info},
+                                );
                 }
                 self.drop();
                 try self.append();
@@ -440,14 +413,16 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 inline for (allTypes) |T| {
                     const arr = self.getArrayFromType(T);
                     @setEvalBranchQuota(@typeInfo(T).@"struct".field_names.len * systems.len * 100);
-                    for (arr.items) |*value|
-                        try applySystems(
-                            &receiveSystems,
-                            T,
-                            "receive",
-                            value,
-                            .{ event, &self.info },
-                        );
+                    inline for (systems) |Sys|
+                        if (comptime system.hasReceive(Sys))
+                            for (arr.items) |*value|
+                                try applySystem(
+                                    Sys,
+                                    T,
+                                    .receive,
+                                    value,
+                                    .{ event, &self.info },
+                                );
                 }
             }
 
@@ -480,10 +455,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 std.debug.print("\n", .{});
                 inline for (@typeInfo(T).@"struct".field_types, @typeInfo(T).@"struct".field_names, comptime flags.getFieldFlags(T)) |U, name, flag| {
                     switch (flag) {
-                        .owned => switch (@typeInfo(U)) {
-                            .optional => |opt| printTypeQualifies(opt.child, prefix ++ "." ++ name ++ ".?"),
-                            else => printTypeQualifies(U, prefix ++ "." ++ name),
-                        },
+                        .owned => printTypeQualifies(U, prefix ++ "." ++ name),
                         else => {},
                     }
                 }

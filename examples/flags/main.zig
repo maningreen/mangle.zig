@@ -220,7 +220,7 @@ pub fn main(init: std.process.Init) !void {
         try init.io.sleep(timestep, .real);
         print(ansi.clear.screen, .{});
 
-        // calculate delta during compile time as a heuristic
+        // calculate delta during compile time
         const delta: comptime_float = @as(f32, @floatFromInt(timestep.nanoseconds)) / std.time.ns_per_s;
         try registry.process(delta);
 

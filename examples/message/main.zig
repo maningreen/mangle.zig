@@ -51,9 +51,8 @@ const MessageSystem = struct {
     }
 };
 
-const Registry = mangle.Registry(&.{Message}, &.{MessageSystem}, null);
-
 pub fn main(init: std.process.Init) !void {
+    const Registry = mangle.Registry(&.{Message}, &.{MessageSystem}, null);
     var reg = Registry.init(init.io, init.gpa, {});
     defer reg.deinit();
 
