@@ -567,7 +567,7 @@ pub fn flatten(value: anytype) Flatten(@TypeOf(value)) {
 ///> **NOTE**
 ///> - see also [path](#mangle.flags.path)
 pub fn Path(comptime T: type) type {
-    return PathInternal(T, "");
+    return PathInternal(T, @typeName(T));
 }
 
 fn PathData(comptime prefix: []const u8, comptime Original: type) type {

@@ -48,6 +48,7 @@ const MessageSystem = struct {
         // note how it's `.str` not `.string`
         std.debug.print("{s}", .{item.str});
         while (reader.interface.takeByte() catch 0 != item.key) {}
+        try info.dropDeferred(item); // explicitly remove it is, unnecessary, creates a little overhead, but for example's sake works.
     }
 };
 
