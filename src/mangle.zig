@@ -324,15 +324,17 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 const i = comptime blk: {
                     const path = flags.getPath(info.child);
                     if (path.len > 0) {
-                        var split = std.mem.splitScalar(u8, path, flags.pathing.pathDelimiter);
+                        var split = std.mem.splitScalar(u8, path, flags.pathing.path_delimiter);
                         const uName = split.first();
-                        for (RegistryT.allTypes, 0..) |U, i| {
+                        for (RegistryT.originalTypes, 0..) |U, i| {
                             if (util.strEql(@typeName(U), uName))
                                 break :blk i;
-                        } else @compileError("Error: type '" ++ @typeName(T) ++ "' is not anywhere in the registry");
+                        } else @compileError(
+                            "Error: type '" ++ @typeName(T) ++ "' is not anywhere in the registry",
+                        );
                     } else {
-                        for (RegistryT.allTypes, 0..) |U, i| {
-                            if (flags.OriginalType(U) == T)
+                        for (RegistryT.originalTypes, 0..) |U, i| {
+                            if (U == T)
                                 break :blk i;
                         } else @compileError("Error: type '" ++ @typeName(T) ++ "' is not anywhere in the registry");
                     }

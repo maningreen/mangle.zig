@@ -567,7 +567,7 @@ pub fn flatten(value: anytype) Flatten(@TypeOf(value)) {
 ///> **NOTE**
 ///> - see also [path](#mangle.flags.path)
 pub fn Path(comptime T: type) type {
-    return PathInternal(T, "");
+    return PathInternal(T, @typeName(T));
 }
 
 fn PathData(comptime prefix: []const u8, comptime Original: type) type {
@@ -583,6 +583,7 @@ fn PathData(comptime prefix: []const u8, comptime Original: type) type {
 fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
     switch (@typeInfo(T)) {
         .@"struct" => {},
+        .optional => |opt| return ?PathInternal(opt.child, prefix),
         else => return T,
     }
     if (@hasField(T, formats.identity)) {
@@ -639,9 +640,13 @@ fn pathInternal(comptime value: anytype, comptime prefix: []const u8) PathIntern
     const Pathed = PathInternal(T, prefix);
 
     var ret: Pathed = undefined;
-    @field(ret, formats.identity) = .{};
-    inline for (@typeInfo(T).@"struct".field_names) |field| {
-        @field(ret, field) = @field(value, field);
+    t: switch (@typeInfo(@FieldType(Pathed, formats.identity))) {
+        .@"struct" => |i| inline for (i.field_names) |field| {
+            @field(ret, field) = @field(value, field);
+        },
+        .optional => |opt| continue :t @typeInfo(opt.child),
+
+        else => {},
     }
     return ret;
 }
@@ -853,9 +858,10 @@ test aliasName {
         \\newline
         ,
         "---------",
+        &.{ 0, 1, 3, 5, 100, 234, 12, 5, 7 }, // just random
     };
 
-    const TestType = void;
+    const TestType = f32;
     inline for (names) |name| {
         const T = Alias(TestType, name);
         try std.testing.expectEqualStrings(name, comptime aliasName(T));
