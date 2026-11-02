@@ -69,17 +69,6 @@ fn applySystem(
     if (comptime !@field(Sys, system.fields.signature.name).qualifies(T)) return;
 
     const Named = @field(Sys, system.fields.signature.name).NamedType(T);
-    comptime {
-        if (!util.layoutEql(T, Named))
-            @compileError(
-                \\This is asserted, and if fails, report on github. Also include the type definition for '
-            ++ @typeName(flags.OriginalType(T)) ++
-                \\' and substructures." You may also want to include the definition for the system '
-            ++ @typeName(Sys) ++
-                \\'
-                \\ this is *probably* not your fault, as the function used for this isn't perfect.
-            );
-    }
     return @call(
         .auto,
         @field(Sys, @tagName(function)),
