@@ -100,7 +100,7 @@ fn getTypeIsLegal(comptime T: type) bool {
                     switch (flag) {
                         // illegal behavior
                         .owned, .composed => |tag| {
-                            @compileError("Error, type '" ++ @typeName(T) ++ "' has a field ('" ++ name ++ "') which is comptime and marked as " ++ @tagName(tag) ++ ", illegal behavior");
+                            @compileError("type '" ++ @typeName(T) ++ "' has a field ('" ++ name ++ "') which is comptime and marked as " ++ @tagName(tag) ++ ", illegal behavior");
                         },
                         else => {},
                     }
@@ -174,9 +174,6 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     appendVal[i] = .empty;
                 }
 
-                if (@import("builtin").mode == .debug)
-                    logQualify();
-
                 return .{
                     .data = data,
                     .appendQueue = appendVal,
@@ -191,14 +188,14 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             }
 
             /// asserts `value` is a top-level field, and a pointer
-            fn itemDeinit(self: *RegistryT, value: anytype) void {
+            fn itemDeinit(self: *@This(), value: anytype) void {
                 const T: type = @TypeOf(value);
                 const info = switch (@typeInfo(T)) {
                     .pointer => |i| i,
                     else => @compileError("Error: Type '" ++ @typeName(T) ++ "' is not a pointer!"),
                 };
                 const DeinitType: type = fn (comptime T: type, value: anytype, info: anytype) void;
-                const i: comptime_int = comptime for (RegistryT.allTypes, 0..) |U, i| {
+                const i: comptime_int = comptime for (@This().allTypes, 0..) |U, i| {
                     if (U == info.child) break i;
                 } else @compileError("Error: Type '" ++ @typeName(T) ++ "' is not in the registry!");
                 if (comptime @hasDecl(originalTypes[i], "deinit")) {
@@ -207,7 +204,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 } else return;
             }
 
-            pub fn deinit(self: *RegistryT) void {
+            pub fn deinit(self: *@This()) void {
                 inline for (0..types.len) |i| {
                     for (self.data[i].items) |*value|
                         self.itemDeinit(value);
@@ -238,11 +235,12 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 try self.append();
             }
 
+            /// assumes that T is a used type.
             fn getArrayFromType(self: *@This(), comptime T: type) *Array(T) {
                 const i = comptime for (allTypes, 0..) |J, i| {
                     if (T == J)
                         break i;
-                } else @compileError("Error, type '" ++ @typeName(T) ++ "' is not in the Registry!");
+                } else @compileError("type '" ++ @typeName(T) ++ "' is not in the Registry!");
                 return &self.data[i];
             }
 
@@ -253,14 +251,6 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             /// Asserts every field of the union is either a top-level value, or `void`, in which case it's ignored
             ///
             /// Works for `?T`, as well, ignoring if `value == null`
-            ///
-            ///> **NOTE**:
-            ///> - Pointer is owned by `self`
-            ///> - Pointer may be invalidated between calls of `process`
-            ///
-            ///> **WARNING**:
-            ///> - Returned pointer is not guaranteed to be the same type as `value`
-            ///> - May cause runtime overhead if `@TypeOf(value) != flags.Flatten(@TypeOf(value))`
             pub fn addValue(self: *@This(), value: anytype) std.mem.Allocator.Error!void {
                 switch (comptime @typeInfo(@TypeOf(value))) {
                     .@"struct" => {
@@ -273,7 +263,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                         const T = TypeTransform(TPrime);
                         const i = comptime for (allTypes, 0..) |J, i| {
                             if (T == J) break i;
-                        } else @compileError("Error, type \"" ++ @typeName(@TypeOf(value)) ++ "\" is not in the Registry!");
+                        } else @compileError("type \"" ++ @typeName(@TypeOf(value)) ++ "\" is not in the Registry!");
 
                         const flattened = flags.flatten(value);
 
@@ -285,7 +275,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     .optional => if (value) |v| {
                         self.addValue(v);
                     },
-                    else => @compileError("Error, type \"" ++ @typeName(@TypeOf(value)) ++ " is not an optional, union, or struct!"),
+                    else => @compileError("type \"" ++ @typeName(@TypeOf(value)) ++ " is not an optional, union, or struct!"),
                 }
             }
 
@@ -294,7 +284,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             ///> **NOTE**:
             ///>    - see also [appendDeferred](#mangle.Registry.RegistryInformation.appendDeferred)
             ///>    - see also [addValue](#mangle.Registry.addValue)
-            pub fn appendDeferred(self: *RegistryT, value: anytype) std.mem.Allocator.Error!void {
+            pub fn appendDeferred(self: *@This(), value: anytype) std.mem.Allocator.Error!void {
                 switch (@typeInfo(@TypeOf(value))) {
                     .@"union" => try switch (value) {
                         inline else => |unwrapped| self.addValue(unwrapped),
@@ -315,7 +305,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             ///> **NOTE**:
             ///>    - see also [appendDeferred](#mangle.Registry.RegistryInformation.dropDeferred)
             ///>    - `value` **must** be a pointer to a value
-            pub fn dropDeferred(self: *RegistryT, value: anytype) std.mem.Allocator.Error!void {
+            pub fn dropDeferred(self: *@This(), value: anytype) std.mem.Allocator.Error!void {
                 const info = switch (@typeInfo(@TypeOf(value))) {
                     .pointer => |p| p,
                     else => @compileError("Error: type '" ++ @typeName(value) ++ "' is not a pointer!"),
@@ -326,17 +316,18 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     std.debug.assert(path.len > 0);
                     var split = std.mem.splitScalar(u8, path, flags.pathing.path_delimiter);
                     const uName = split.first();
-                    for (RegistryT.allTypes, 0..) |U, i| {
+                    for (@This().allTypes, 0..) |U, i| {
                         if (util.strEql(@typeName(flags.OriginalType(U)), uName))
                             break :blk i;
                     } else @compileError(
-                        "Error: type '" ++ @typeName(T) ++ "' is not anywhere in the registry",
+                        "type '" ++ @typeName(T) ++ "' is not anywhere in the registry",
                     );
                 };
                 try self.dropQueue[i].append(self.info.gpa, @as(*allTypes[i], @ptrCast(value)) - self.data[i].items.ptr);
             }
 
             /// information provided to every system as the final argument.
+            const Reg = @This();
             pub const RegistryInformation = struct {
                 gpa: std.mem.Allocator,
                 io: std.Io,
@@ -350,14 +341,14 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 ///>    - see also [appendDeferred](#mangle.Registry.appendDeferred)
                 ///>    - see also [addValue](#mangle.Registry.addValue)
                 pub fn appendDeferred(self: *RegistryInformation, value: anytype) std.mem.Allocator.Error!void {
-                    const registry: *RegistryT = @fieldParentPtr("info", self);
+                    const registry: *Reg = @fieldParentPtr("info", self);
                     return registry.appendDeferred(value);
                 }
 
                 /// Given the registry information and a pointer to a type in the registry, queues it to removal.
                 /// If `value` is not owned by registry, undefined behavior.
                 pub fn dropDeferred(self: *RegistryInformation, value: anytype) std.mem.Allocator.Error!void {
-                    const registry: *RegistryT = @fieldParentPtr("info", self);
+                    const registry: *Reg = @fieldParentPtr("info", self);
                     return registry.dropDeferred(value);
                 }
 
@@ -367,13 +358,18 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 ///     - Is an interrupt, other events are processed on call
                 ///     - See also, [emit](#mangle.Registry.emit)
                 pub fn emit(self: *RegistryInformation, eventData: anytype) !void {
-                    return @as(*RegistryT, @fieldParentPtr("info", self)).emit(eventData);
+                    return @as(*Reg, @fieldParentPtr("info", self)).emit(eventData);
+                }
+
+                pub fn getItemFromIndex(self: *RegistryInformation, comptime T: type, index: usize) ?*TypeTransform(T) {
+                    const registry: *Reg = @fieldParentPtr("info", self);
+                    return registry.getItemFromIndex(T, index);
                 }
             };
 
             /// Loops through the dropQueue and removes the items in the registry with a double pass
             /// invalidates pointers
-            fn drop(self: *RegistryT) void {
+            fn drop(self: *@This()) void {
                 inline for (&self.dropQueue, &self.data) |*queue, *array| {
                     for (queue.items) |index| {
                         self.itemDeinit(&array.items[index]);
@@ -391,7 +387,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             }
 
             /// Loops through the append queue and adds all items to their respective arrays
-            fn append(self: *RegistryT) !void {
+            fn append(self: *@This()) !void {
                 inline for (&self.appendQueue) |*list| {
                     for (list.items) |item|
                         try self.addValue(item);
@@ -405,7 +401,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             /// **NOTE**:
             ///     - Is an interrupt, if called in `process`, the event will happen
             ///     - See also, [emit](#mangle.Registry.RegistryInformation.emit)
-            pub fn emit(self: *RegistryT, event: anytype) !void {
+            pub fn emit(self: *@This(), event: anytype) !void {
                 inline for (allTypes) |T| {
                     const arr = self.getArrayFromType(T);
                     @setEvalBranchQuota(@typeInfo(T).@"struct".field_names.len * systems.len * 100);
@@ -422,7 +418,6 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 }
             }
 
-            const RegistryT = @This();
             /// All the systems that were requested. Includes unused systems.
             pub const systems: []const type = requestedSystems;
             /// The internal arrays used.
@@ -456,6 +451,57 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     }
                 }
             }
+
+            pub fn getItemFromIndex(self: *@This(), comptime T: type, index: usize) ?*TypeTransform(T) {
+                const U = TypeTransform(T);
+                const arr = self.getArrayFromType(U);
+                return if (index < arr.items.len) &arr.items[index] else null;
+            }
         };
+    }
+}
+
+test "getItemFromIndex" {
+    const gpa = std.testing.allocator;
+    const io = std.Io.failing;
+    const T = struct { u32 };
+    const Reg = Registry(&.{T}, &.{}, null);
+
+    var reg: Reg = Reg.init(io, gpa, {});
+    defer reg.deinit();
+    try reg.addValue(T{0});
+    try reg.addValue(T{1});
+    try reg.addValue(T{2});
+    try reg.addValue(T{3});
+    try reg.addValue(T{4});
+    try reg.addValue(T{5});
+
+    {
+        const t = reg.info.getItemFromIndex(T, 0).?;
+        try std.testing.expect(t.@"0" == 0);
+    }
+    {
+        const t = reg.info.getItemFromIndex(T, 1).?;
+        try std.testing.expect(t.@"0" == 1);
+    }
+    {
+        const t = reg.info.getItemFromIndex(T, 2).?;
+        try std.testing.expect(t.@"0" == 2);
+    }
+    {
+        const t = reg.info.getItemFromIndex(T, 3).?;
+        try std.testing.expect(t.@"0" == 3);
+    }
+    {
+        const t = reg.info.getItemFromIndex(T, 4).?;
+        try std.testing.expect(t.@"0" == 4);
+    }
+    {
+        const t = reg.info.getItemFromIndex(T, 5).?;
+        try std.testing.expect(t.@"0" == 5);
+    }
+    {
+        const t = reg.info.getItemFromIndex(T, 6);
+        try std.testing.expect(t == null);
     }
 }
