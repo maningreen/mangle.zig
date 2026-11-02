@@ -7,7 +7,7 @@ pub fn build(b: *std.Build) void {
     const mainModule = b.addModule("mangle", .{
         .optimize = optimize,
         .target = target,
-        .root_source_file = b.path("./src/mangle.zig"),
+        .root_source_file = b.path("./src/root.zig"),
     });
 
     const lib = b.addLibrary(.{
