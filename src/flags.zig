@@ -588,10 +588,9 @@ fn PathInternal(comptime T: type, comptime prefix: []const u8) type {
     }
     if (@hasField(T, formats.identity)) {
         @compileError(std.fmt.comptimePrint(
-            "Type '{}' already has a path: '{any}'. Please report this as an issue.",
+            "Type '{}' already has a path. Please report this as an issue.",
             .{
                 OriginalType(T),
-                @typeInfo(@FieldType(T, formats.identity)).@"struct".decls,
             },
         ));
     }

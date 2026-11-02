@@ -361,7 +361,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                     return @as(*Reg, @fieldParentPtr("info", self)).emit(eventData);
                 }
 
-                pub fn getItemFromIndex(self: *RegistryInformation, comptime T: type, index: usize) ?*TypeTransform(T) {
+                pub fn getItemFromIndex(self: *RegistryInformation, comptime T: type, index: usize) ?*WorkingType(T) {
                     const registry: *Reg = @fieldParentPtr("info", self);
                     return registry.getItemFromIndex(T, index);
                 }
@@ -452,10 +452,21 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 }
             }
 
-            pub fn getItemFromIndex(self: *@This(), comptime T: type, index: usize) ?*TypeTransform(T) {
-                const U = TypeTransform(T);
+            pub fn getItemFromIndex(self: *@This(), comptime T: type, index: usize) ?*WorkingType(T) {
+                const U = WorkingType(T);
                 const arr = self.getArrayFromType(U);
                 return if (index < arr.items.len) &arr.items[index] else null;
+            }
+
+            fn WorkingType(comptime T: type) type {
+                inline for (allTypes) |U| {
+                    if (U == T) return U;
+                }
+                if (flags.isPathed(T))
+                    inline for (allTypes) |U| {
+                        if (flags.OriginalType(U) == flags.OriginalType(T)) return U;
+                    };
+                @compileError("type '" ++ flags.OriginalType(T) ++ "' is not in the registry! If this is a false negative, please make an issue");
             }
         };
     }
