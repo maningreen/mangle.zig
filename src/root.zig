@@ -448,14 +448,14 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             }
 
             fn WorkingType(comptime T: type) type {
-                inline for (allTypes) |U| {
-                    if (U == T) return U;
+                inline for (allTypes, originalTypes) |U, V| {
+                    if (U == T or V == T) return U;
                 }
                 if (flags.isPathed(T))
                     inline for (allTypes) |U| {
                         if (flags.OriginalType(U) == flags.OriginalType(T)) return U;
                     };
-                @compileError("type '" ++ flags.OriginalType(T) ++ "' is not in the registry! If this is a false negative, please make an issue");
+                @compileError("type '" ++ @typeName(flags.OriginalType(T)) ++ "' is not in the registry! If this is a false negative, please make an issue");
             }
         };
     }
