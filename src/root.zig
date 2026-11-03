@@ -451,7 +451,7 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 const U = WorkingType(T);
                 const arr = self.getArrayFromType(U);
                 switch (from) {
-                    .top => return if (index + 1 < arr.items.len) &arr.items[arr.items.len - (index + 1)] else null,
+                    .top => return if (index < arr.items.len) &arr.items[arr.items.len - (index + 1)] else null,
                     .bottom => return if (index < arr.items.len) &arr.items[index] else null,
                 }
             }
