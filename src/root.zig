@@ -249,12 +249,12 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             }
 
             pub fn deinit(self: *@This()) void {
-                inline for (0..types.len) |i| {
-                    for (self.data[i].items) |*value|
+                inline for (&self.data, &self.appendQueue, &self.dropQueue) |*data, *appendQueue, *dropQueue| {
+                    for (data.items) |*value|
                         self.itemDeinit(value);
-                    self.data[i].deinit(self.info.gpa);
-                    self.appendQueue[i].deinit(self.info.gpa);
-                    self.dropQueue[i].deinit(self.info.gpa);
+                    data.deinit(self.info.gpa);
+                    appendQueue.deinit(self.info.gpa);
+                    dropQueue.deinit(self.info.gpa);
                 }
             }
 
