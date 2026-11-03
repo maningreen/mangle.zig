@@ -153,6 +153,61 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
             /// The items to drop
             dropQueue: DropType,
 
+            pub const StackOrigin = enum {
+                top,
+                bottom,
+            };
+            
+            /// information provided to every system as the final argument.
+            const Reg = @This();
+            pub const RegistryInformation = struct {
+                gpa: std.mem.Allocator,
+                io: std.Io,
+                delta: f32,
+                extra: (ExtraInfo orelse void),
+
+                /// Adds top-level item to the registry after `process` is called.
+                /// Intended for calling from systems
+                ///
+                ///> **NOTE**:
+                ///>    - see also [appendDeferred](#mangle.Registry.appendDeferred)
+                ///>    - see also [addValue](#mangle.Registry.addValue)
+                pub fn appendDeferred(self: *RegistryInformation, value: anytype) std.mem.Allocator.Error!void {
+                    const registry: *Reg = @fieldParentPtr("info", self);
+                    return registry.appendDeferred(value);
+                }
+
+                /// Given the registry information and a pointer to a type in the registry, queues it to removal.
+                /// If `value` is not owned by registry, undefined behavior.
+                pub fn dropDeferred(self: *RegistryInformation, value: anytype) std.mem.Allocator.Error!void {
+                    const registry: *Reg = @fieldParentPtr("info", self);
+                    return registry.dropDeferred(value);
+                }
+
+                /// Emits an event to every system.
+                ///
+                /// **NOTE**:
+                ///     - Is an interrupt, other events are processed on call
+                ///     - See also, [emit](#mangle.Registry.emit)
+                pub fn emit(self: *RegistryInformation, eventData: anytype) !void {
+                    return @as(*Reg, @fieldParentPtr("info", self)).emit(eventData);
+                }
+
+                pub fn getItemFromIndex(self: *RegistryInformation, comptime T: type, index: usize, from: StackOrigin) ?*WorkingType(T) {
+                    const registry: *Reg = @fieldParentPtr("info", self);
+                    return registry.getItemFromIndex(T, index, from);
+                }
+            };
+
+            /// All the systems that were requested. Includes unused systems.
+            pub const systems: []const type = requestedSystems;
+            /// The internal arrays used.
+            pub const arrayTypes = valueTypes;
+            /// The internal types used.
+            pub const allTypes = retyped;
+            /// The original types inputted to the system.
+            pub const originalTypes: []const type = types;
+
             pub fn init(io: std.Io, gpa: std.mem.Allocator, extra: if (ExtraInfo) |T| T else void) @This() {
                 var data: DataType = undefined;
                 var dropVal: DropType = undefined;
@@ -315,47 +370,6 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 try self.dropQueue[i].append(self.info.gpa, @as(*allTypes[i], @ptrCast(value)) - self.data[i].items.ptr);
             }
 
-            /// information provided to every system as the final argument.
-            const Reg = @This();
-            pub const RegistryInformation = struct {
-                gpa: std.mem.Allocator,
-                io: std.Io,
-                delta: f32,
-                extra: (ExtraInfo orelse void),
-
-                /// Adds top-level item to the registry after `process` is called.
-                /// Intended for calling from systems
-                ///
-                ///> **NOTE**:
-                ///>    - see also [appendDeferred](#mangle.Registry.appendDeferred)
-                ///>    - see also [addValue](#mangle.Registry.addValue)
-                pub fn appendDeferred(self: *RegistryInformation, value: anytype) std.mem.Allocator.Error!void {
-                    const registry: *Reg = @fieldParentPtr("info", self);
-                    return registry.appendDeferred(value);
-                }
-
-                /// Given the registry information and a pointer to a type in the registry, queues it to removal.
-                /// If `value` is not owned by registry, undefined behavior.
-                pub fn dropDeferred(self: *RegistryInformation, value: anytype) std.mem.Allocator.Error!void {
-                    const registry: *Reg = @fieldParentPtr("info", self);
-                    return registry.dropDeferred(value);
-                }
-
-                /// Emits an event to every system.
-                ///
-                /// **NOTE**:
-                ///     - Is an interrupt, other events are processed on call
-                ///     - See also, [emit](#mangle.Registry.emit)
-                pub fn emit(self: *RegistryInformation, eventData: anytype) !void {
-                    return @as(*Reg, @fieldParentPtr("info", self)).emit(eventData);
-                }
-
-                pub fn getItemFromIndex(self: *RegistryInformation, comptime T: type, index: usize) ?*WorkingType(T) {
-                    const registry: *Reg = @fieldParentPtr("info", self);
-                    return registry.getItemFromIndex(T, index);
-                }
-            };
-
             /// Loops through the dropQueue and removes the items in the registry with a double pass
             /// invalidates pointers
             fn drop(self: *@This()) void {
@@ -407,15 +421,6 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 }
             }
 
-            /// All the systems that were requested. Includes unused systems.
-            pub const systems: []const type = requestedSystems;
-            /// The internal arrays used.
-            pub const arrayTypes = valueTypes;
-            /// The internal types used.
-            pub const allTypes = retyped;
-            /// The original types inputted to the system.
-            pub const originalTypes: []const type = types;
-
             /// Prints the systems top-level types & owned fields qualify for.
             ///
             /// Runs automatically on `@import("builtin").mode == .debug`, doesn't otherwise
@@ -441,10 +446,14 @@ pub fn Registry(comptime types: []const type, comptime requestedSystems: []const
                 }
             }
 
-            pub fn getItemFromIndex(self: *@This(), comptime T: type, index: usize) ?*WorkingType(T) {
+            // When `from == .top` index is from the top
+            pub fn getItemFromIndex(self: *@This(), comptime T: type, index: usize, from: StackOrigin) ?*WorkingType(T) {
                 const U = WorkingType(T);
                 const arr = self.getArrayFromType(U);
-                return if (index < arr.items.len) &arr.items[index] else null;
+                switch (from) {
+                    .top => return if (arr.items.len - (index + 1) < arr.items.len) &arr.items[arr.items.len - (index + 1)] else null,
+                    .bottom => return if (index < arr.items.len) &arr.items[index] else null,
+                }
             }
 
             fn WorkingType(comptime T: type) type {
@@ -477,31 +486,39 @@ test "getItemFromIndex" {
     try reg.addValue(T{5});
 
     {
-        const t = reg.info.getItemFromIndex(T, 0).?;
+        const t = reg.info.getItemFromIndex(T, 0, .bottom).?;
         try std.testing.expect(t.@"0" == 0);
     }
     {
-        const t = reg.info.getItemFromIndex(T, 1).?;
+        const t = reg.info.getItemFromIndex(T, 1, .bottom).?;
         try std.testing.expect(t.@"0" == 1);
     }
     {
-        const t = reg.info.getItemFromIndex(T, 2).?;
+        const t = reg.info.getItemFromIndex(T, 2, .bottom).?;
         try std.testing.expect(t.@"0" == 2);
     }
     {
-        const t = reg.info.getItemFromIndex(T, 3).?;
+        const t = reg.info.getItemFromIndex(T, 3, .bottom).?;
         try std.testing.expect(t.@"0" == 3);
     }
     {
-        const t = reg.info.getItemFromIndex(T, 4).?;
+        const t = reg.info.getItemFromIndex(T, 4, .bottom).?;
         try std.testing.expect(t.@"0" == 4);
     }
     {
-        const t = reg.info.getItemFromIndex(T, 5).?;
+        const t = reg.info.getItemFromIndex(T, 5, .bottom).?;
         try std.testing.expect(t.@"0" == 5);
     }
     {
-        const t = reg.info.getItemFromIndex(T, 6);
+        const t = reg.info.getItemFromIndex(T, 6, .bottom);
         try std.testing.expect(t == null);
+    }
+    {
+        const t = reg.info.getItemFromIndex(T, 0, .top).?;
+        try std.testing.expectEqual(5, t.@"0");
+    }
+    {
+        const t = reg.info.getItemFromIndex(T, 1, .top).?;
+        try std.testing.expectEqual(4, t.@"0");
     }
 }
